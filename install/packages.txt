@@ -1,0 +1,57 @@
+# dotfiles-Alpine/install/packages.txt
+# apk package names for the modern terminal stack. One per line; # comments ok.
+# Tools NOT packaged (starship) or built from source on musl (yazi, tree-sitter)
+# are handled by bootstrap.sh — keep them OUT of here.
+# Most modern tools live in the `community` repo — make sure it's enabled in
+# /etc/apk/repositories (it is by default on Alpine 3.x + edge).
+
+# ── shell + multiplexer ───────────────────────────────────────
+zsh            # Alpine's default shell is ash — zsh must be added explicitly
+tmux
+
+# ── privilege + shell tooling ─────────────────────────────────
+doas           # Alpine's default privilege tool (sudo's lean cousin)
+shadow         # provides chsh/usermod so bootstrap can set zsh as login shell
+
+# ── modern CLI core (community repo) ──────────────────────────
+eza            # ls
+bat            # cat
+fd             # find (Alpine packages it as `fd`)
+ripgrep        # grep
+zoxide         # cd
+fzf            # fuzzy finder
+delta          # git pager / diffs  (Alpine package is `delta`, NOT git-delta)
+btop           # top/htop
+tealdeer       # tldr (binary: tldr)
+atuin          # shell history (in Alpine repos — no installer needed)
+
+# ── editor + git workflow ─────────────────────────────────────
+neovim
+git            # `git subtree` ships with git on Alpine (no separate package)
+openssh-client # ssh / ssh-keygen / ssh-agent
+lazygit
+
+# ── clipboard — OPTIONAL: pulls X/Wayland libs. On a headless/container Alpine
+# you can delete both (Core's `clip` just no-ops without a backend; on WSL it
+# uses clip.exe regardless). Keep them if you run a desktop session.
+wl-clipboard   # wl-copy / wl-paste (Wayland)
+xclip          # X11 fallback
+
+# ── build toolchain (needed to compile yazi + tree-sitter-cli on musl) ────────
+build-base     # Alpine's gcc/g++/make/musl-dev meta (replaces Fedora's gcc/gcc-c++/make)
+cargo          # rust toolchain (pulls rust)
+pkgconf        # some crates probe libs via pkg-config at build time
+openssl-dev    # ditto — common cargo build dependency
+
+# ── Neovim provider deps (fix :checkhealth) ───────────────────
+python3
+py3-pip
+py3-pynvim     # pynvim — the Python 3 provider module (Alpine name)
+
+# ── misc useful ───────────────────────────────────────────────
+curl
+wget
+jq
+gawk
+direnv
+# NOTE: no flatpak here — it isn't idiomatic on Alpine (the lean/container distro).

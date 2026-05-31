@@ -1,0 +1,17 @@
+# dotfiles-Alpine/os/alpine.gitconfig
+# ──────────────────────────────────────────────────────────────────────────────
+# OS-specific git config. Symlinked to ~/.config/git/os.gitconfig by bootstrap.sh
+# and pulled in by Core's gitconfig. Holds ONLY what differs by OS/environment.
+# ──────────────────────────────────────────────────────────────────────────────
+
+[credential]
+	# In-memory cache for 24h — zero extra packages, works on a lean/headless
+	# Alpine and under WSL alike. Alpine boxes are often servers/containers with
+	# no keyring, so this is the sensible default.
+	helper = cache --timeout=86400
+	#
+	# Swap in if your environment has more:
+	#   • Desktop Alpine with a Secret Service keyring + libsecret helper built:
+	#       helper = /usr/libexec/git-core/git-credential-libsecret
+	#   • WSL + Git for Windows (shares Windows GCM; path varies by version):
+	#       helper = "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
