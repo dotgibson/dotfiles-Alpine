@@ -209,12 +209,14 @@ export NOTES_DIR="${NOTES_DIR:-$HOME/Notes}"
 # them. It declares the load order and sources the vendored Core loader
 # (core/zsh/loader.zsh -> $ZSH_CFG/loader.zsh), which byte-compiles + sources each
 # module. Loading the FULL set (ui/git/maint/update were silently missing) is the fix.
-ZSH_CFG="$XDG_CONFIG_HOME/zsh"
+: "${ZDOTDIR:=$XDG_CONFIG_HOME/zsh}"
+export ZDOTDIR              # Core modules (history/options) key state off ZDOTDIR;
+ZSH_CFG="$ZDOTDIR"          # align the loader to the SAME dir so state never splits
 _CORE_MODULES=(tools ui options history aliases git functions fzf bindings plugins op maint update os local)
 if [[ -r "$ZSH_CFG/loader.zsh" ]]; then
   source "$ZSH_CFG/loader.zsh"
 else
-  print -u2 -- "zshrc: loader.zsh not found — run ./bootstrap.sh (Core modules not loaded)."
+  print -u2 -- "zshrc: Core loader not found at $ZSH_CFG/loader.zsh — re-run the dotfiles bootstrap to (re)link Core."
 fi
 unset _CORE_MODULES
 ZRC
