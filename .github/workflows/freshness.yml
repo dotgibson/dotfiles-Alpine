@@ -1,0 +1,46 @@
+name: core-freshness
+
+# Consumer-side freshness watcher for the vendored Core subtree. dotfiles-core authors
+# Core and fans it out via git subtree; nothing on THIS side tracked whether the vendored
+# core/ had fallen behind upstream — so a security/bugfix landing in Core could sit
+# un-pulled here indefinitely. Weekly (and on demand) this checks the recorded vendored
+# commit (core.lock) against upstream's tip; a behind result is the NUDGE to run a
+# `git subtree pull`. Mirrors dotfiles-MacBook's core-freshness watcher.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC (an hour after Core's own freshness run)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-freshness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vendored-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # core.lock is the fast path; keep full history so the subtree-split fallback still resolves
+      - name: Check vendored core/ against upstream
+        run: |
+          if ./test/check-core-freshness.sh; then
+            echo "✅ vendored core/ is current with upstream" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### ⚠️ vendored core/ is behind upstream dotfiles-core"
+              echo ""
+              echo "Pull Core, then relink:"
+              echo ""
+              echo '```'
+              echo "git subtree pull --prefix=core https://github.com/Gerrrt/dotfiles-core main --squash"
+              echo "./bootstrap.sh --links-only"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
