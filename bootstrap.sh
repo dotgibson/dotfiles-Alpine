@@ -28,14 +28,14 @@ for a in "$@"; do case "$a" in
     echo "unknown arg: $a" >&2
     exit 1
     ;;
-  esac done
+  esac; done
 
 # ── core/ subtree present? (inline: can't source a lib out of core/ before this) ─
 # Validate the SPECIFIC paths we depend on below — the zsh modules wire_links
 # symlinks, plus the two libs sourced next — so a missing or partially-vendored
 # subtree fails HERE with a precise message, not later with a cryptic
 # `source: No such file`.
-for _req in core/zsh core/lib/ux.sh core/lib/bootstrap-lib.sh; do
+for _req in core/zsh/loader.zsh core/lib/ux.sh core/lib/bootstrap-lib.sh; do
   if [[ ! -e "$DOTFILES/$_req" ]]; then
     echo "core/ subtree missing or incomplete (need $_req). One-time, run:" >&2
     echo "  git subtree add  --prefix=core <dotfiles-core remote> main --squash   # first time" >&2
