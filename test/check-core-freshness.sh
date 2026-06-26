@@ -7,19 +7,25 @@
 # freshness watcher: it asks whether the vendored commit is now BEHIND upstream's
 # tip, i.e. there are Core updates this repo hasn't pulled. A behind result is the
 # NUDGE to run a `git subtree pull`, not a hard error in normal development — so it
-# lives in a SCHEDULED workflow, exiting non-zero only there to surface the drift.
+# lives in a SCHEDULED workflow.
 #
-# Best-effort + graceful (offline/restricted → skip, exit 0). Override the upstream
-# and the branch with CORE_UPSTREAM / CORE_BRANCH.
+# Exit codes (matching dotfiles-core's drift-check convention — see
+# core/scripts/update-plugins.sh --check):
+#   0  current, OR a graceful skip (no git, offline/restricted, not a subtree checkout)
+#   2  vendored core/ is BEHIND upstream (drift — the nudge to `git subtree pull`)
+#   1  a genuine hard failure (e.g. a malformed core.lock)
+# The workflow branches on these so a skip, a drift, and a real error each render the
+# right step summary. Override the upstream/branch with CORE_UPSTREAM / CORE_BRANCH.
 # ──────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
 
-# Palette from the VENDORED shared bash UX lib (core/lib/ux.sh) — ONE colour rule instead
-# of a hand-rolled TTY/NO_COLOR block that drifts. Guarded: this script SKIPs when core/ is
-# absent, so fall back to no colour rather than fail to source it.
+# Palette + glyphs from the VENDORED shared bash UX lib (core/lib/ux.sh) — ONE colour/glyph
+# rule instead of hand-rolled copies that drift. If core/ is incomplete the lib won't be
+# readable, so fall back to no colour and ASCII glyphs rather than fail to source it; the
+# explicit core/ presence check below is what actually decides "not a subtree checkout".
 if [[ -r "$REPO/core/lib/ux.sh" ]]; then
   # shellcheck source=/dev/null
   source "$REPO/core/lib/ux.sh"
@@ -27,12 +33,20 @@ if [[ -r "$REPO/core/lib/ux.sh" ]]; then
 else
   c_g='' c_y='' c_r='' c_0=''
 fi
+# ASCII fallbacks when ux.sh is absent; when it's present these are already the
+# locale-correct glyph (✓/⚠/… on UTF-8, ok/!/… otherwise), so := leaves them be.
+: "${UX_OK:=ok}" "${UX_WARN:=!}" "${UX_ERR:=x}" "${UX_INFO:=-}"
+
 skip() {
-  printf '%s–%s %s\n' "$c_y" "$c_0" "$*"
+  printf '%s%s%s %s\n' "$c_y" "$UX_INFO" "$c_0" "$*"
   exit 0
 }
 
+# A non-subtree checkout has no vendored core/ to compare — skip cleanly (and keep the
+# core.lock-present-but-core/-missing case from reporting a misleading "behind").
+[[ -d core ]] || skip "check-core-freshness: no vendored core/ (not a subtree checkout?)"
 command -v git >/dev/null 2>&1 || skip "check-core-freshness: git unavailable"
+
 # Prefer the O(1) offline provenance stamp (core.lock, written by dotfiles-core's
 # sync-core.sh); fall back to the subtree-split marker (which needs full history) when it's
 # absent. Either yields the commit the vendored core/ was last synced from.
@@ -40,11 +54,11 @@ SPLIT=""
 if [[ -r core.lock ]]; then
   SPLIT="$(sed -n 's/^core_sha=//p' core.lock | head -n1)"
   # A present-but-malformed lock would make the TIP-vs-SPLIT compare below report a false
-  # "behind" (e.g. a short SHA never equals the full tip). This is an automated freshness
-  # signal, so fail CLEARLY on an invalid lock rather than emit a misleading verdict.
+  # "behind". This is a real misconfiguration, not drift, so fail HARD (exit 1) with a
+  # clear message rather than emit a misleading verdict.
   if [[ ! "$SPLIT" =~ ^[0-9a-f]{40}$ ]]; then
-    printf '%s✗%s check-core-freshness: core.lock has an invalid core_sha (%s) — expected a 40-char hex SHA\n' \
-      "$c_r" "$c_0" "${SPLIT:-empty}" >&2
+    printf '%s%s%s check-core-freshness: core.lock has an invalid core_sha (%s) — expected a 40-char hex SHA\n' \
+      "$c_r" "$UX_ERR" "$c_0" "${SPLIT:-empty}" >&2
     exit 1
   fi
 fi
@@ -55,19 +69,31 @@ fi
 UPSTREAM="${CORE_UPSTREAM:-https://github.com/Gerrrt/dotfiles-core}"
 BRANCH="${CORE_BRANCH:-main}"
 
-# The upstream tip we'd be pulling. ls-remote needs no clone and is the source of truth.
-TIP="$(git ls-remote "$UPSTREAM" "$BRANCH" 2>/dev/null | awk 'NR==1{print $1}')"
+# Resolve BRANCH to an explicit refs/heads/<branch> so ls-remote can't match a same-named
+# tag (a bare name is a ref PATTERN). A caller may still pass a full refs/… via CORE_BRANCH.
+case "$BRANCH" in
+refs/*) ref="$BRANCH" ;;
+*) ref="refs/heads/$BRANCH" ;;
+esac
+# The upstream tip we'd be pulling. ls-remote needs no clone; GIT_TERMINAL_PROMPT=0 keeps it
+# non-interactive (never block a scheduled run waiting on a credential prompt).
+TIP="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$UPSTREAM" "$ref" 2>/dev/null | awk 'NR==1{print $1}')"
 [[ -n "$TIP" ]] || skip "check-core-freshness: cannot reach $UPSTREAM ($BRANCH) — offline/restricted?"
 
 if [[ "$TIP" == "$SPLIT" ]]; then
-  printf '%s✓%s vendored core/ is current with %s@%s (%s)\n' "$c_g" "$c_0" "$UPSTREAM" "$BRANCH" "${SPLIT:0:12}"
+  printf '%s%s%s vendored core/ is current with %s@%s (%s)\n' "$c_g" "$UX_OK" "$c_0" "$UPSTREAM" "$BRANCH" "${SPLIT:0:12}"
   exit 0
 fi
 
-# Behind (or diverged). Report the SHAs and how to update. Exit non-zero so a scheduled
-# run surfaces it (the workflow turns this into a step-summary nudge). This repo has no
-# Makefile, so the remediation is the raw subtree pull + a links-only bootstrap re-run.
-printf '%s⚠%s vendored core/ is behind upstream %s@%s\n' "$c_y" "$c_0" "$UPSTREAM" "$BRANCH" >&2
-printf '    vendored: %s\n    upstream: %s\n' "${SPLIT:0:12}" "${TIP:0:12}" >&2
-printf '    update:   git subtree pull --prefix=core %s %s --squash, then ./bootstrap.sh --links-only\n' "$UPSTREAM" "$BRANCH" >&2
-exit 1
+# Behind (or diverged). Report the SHAs and how to update, then exit 2 (drift) so a
+# scheduled run surfaces it as a nudge — distinct from the exit-1 hard failures above.
+# This repo has no Makefile, so the remediation is the raw subtree pull + a links-only
+# bootstrap re-run, printed as two copy-pasteable commands (no trailing comma/prose).
+{
+  printf '%s%s%s vendored core/ is behind upstream %s@%s\n' "$c_y" "$UX_WARN" "$c_0" "$UPSTREAM" "$BRANCH"
+  printf '    vendored: %s\n    upstream: %s\n' "${SPLIT:0:12}" "${TIP:0:12}"
+  printf '    update:\n'
+  printf '      git subtree pull --prefix=core %s %s --squash\n' "$UPSTREAM" "$BRANCH"
+  printf '      ./bootstrap.sh --links-only\n'
+} >&2
+exit 2

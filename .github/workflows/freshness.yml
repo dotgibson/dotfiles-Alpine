@@ -29,18 +29,47 @@ jobs:
           fetch-depth: 0 # core.lock is the fast path; keep full history so the subtree-split fallback still resolves
       - name: Check vendored core/ against upstream
         run: |
-          if ./test/check-core-freshness.sh; then
-            echo "✅ vendored core/ is current with upstream" >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "### ⚠️ vendored core/ is behind upstream dotfiles-core"
-              echo ""
-              echo "Pull Core, then relink:"
-              echo ""
-              echo '```'
-              echo "git subtree pull --prefix=core https://github.com/Gerrrt/dotfiles-core main --squash"
-              echo "./bootstrap.sh --links-only"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+          # Capture output + exit code and branch on it: the script exits 0 for
+          # current/skip, 2 for drift (the nudge), 1 for a hard failure (e.g. a malformed
+          # core.lock). `|| rc=$?` keeps the step's set -e from aborting before we branch.
+          rc=0
+          out="$(./test/check-core-freshness.sh 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          case "$rc" in
+            0)
+              {
+                echo "### ✅ vendored core/ freshness"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            2)
+              {
+                echo "### ⚠️ vendored core/ is behind upstream dotfiles-core"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+                echo ""
+                echo "Pull Core, then relink:"
+                echo ""
+                echo '```'
+                echo "git subtree pull --prefix=core https://github.com/Gerrrt/dotfiles-core main --squash"
+                echo "./bootstrap.sh --links-only"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            *)
+              {
+                echo "### ❌ core-freshness check failed (exit $rc)"
+                echo ""
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+          esac
