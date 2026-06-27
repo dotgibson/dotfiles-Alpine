@@ -64,16 +64,25 @@ jobs:
       - name: Install zsh (for zsh -n on the repo-owned zsh modules)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh
 
-      # Put the action's install dir on PATH, then restore it from cache if a prior
-      # run already built it (the action no-ops anything already present).
+      # Create the action's install dir BEFORE adding it to PATH / caching it, so a
+      # cold run doesn't warn about a missing cache path or a non-existent PATH entry.
       - name: Put core-tools bin on PATH
-        run: echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
+        run: |
+          mkdir -p "$HOME/.local/core-tools/bin"
+          echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
 
+      # Cache the verified tool dir. The hash precedes the job segment so the restore
+      # prefix below is HASH-SCOPED: the shell + actionlint jobs warm from each other,
+      # but only within the SAME pinned tool set — a tool-versions.env bump changes the
+      # hash, so a stale cache can't be restored (which, since the action skips install
+      # when the binary already exists in bindir, would otherwise pin CI to old tools).
       - name: Cache pinned gate tools
         uses: actions/cache@v4
         with:
           path: ~/.local/core-tools
-          key: core-tools-${{ runner.os }}-shell-${{ hashFiles('core/scripts/tool-versions.env') }}
+          key: core-tools-${{ runner.os }}-${{ hashFiles('core/scripts/tool-versions.env') }}-shell
+          restore-keys: |
+            core-tools-${{ runner.os }}-${{ hashFiles('core/scripts/tool-versions.env') }}-
 
       # SHA-256-verified install via the shared, vendored Core action — ONE definition
       # for the whole fleet, replacing this workflow's former inline `curl` blocks.
@@ -82,6 +91,20 @@ jobs:
         with:
           shellcheck: "true"
           shfmt: "true"
+
+      # Defense in depth: assert the tools we'll run are the verified ones from bindir,
+      # not a preinstalled copy shadowing them on PATH (the bypass core#81 fixed). Fails
+      # fast with a clear message rather than silently linting with an unverified tool.
+      - name: Assert gate tools resolve to the verified bindir
+        run: |
+          bindir="$HOME/.local/core-tools/bin"
+          rc=0
+          for t in shellcheck shfmt; do
+            p="$(command -v "$t" || true)"
+            echo "$t -> ${p:-<not found>}"
+            [ "$p" = "$bindir/$t" ] || { echo "::error::$t is '${p:-<not found>}', not the verified $bindir/$t"; rc=1; }
+          done
+          exit $rc
 
       # ── BLOCKING: real bugs in repo-owned bash/sh. core/ is excluded (gated
       # upstream). Curated excludes mirror the fleet's house style:
@@ -148,18 +171,29 @@ jobs:
           grep -E '^[A-Z0-9_]+=' "$f" >> "$GITHUB_ENV"
 
       - name: Put core-tools bin on PATH
-        run: echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
+        run: |
+          mkdir -p "$HOME/.local/core-tools/bin"
+          echo "$HOME/.local/core-tools/bin" >> "$GITHUB_PATH"
 
       - name: Cache pinned gate tools
         uses: actions/cache@v4
         with:
           path: ~/.local/core-tools
-          key: core-tools-${{ runner.os }}-actionlint-${{ hashFiles('core/scripts/tool-versions.env') }}
+          key: core-tools-${{ runner.os }}-${{ hashFiles('core/scripts/tool-versions.env') }}-actionlint
+          restore-keys: |
+            core-tools-${{ runner.os }}-${{ hashFiles('core/scripts/tool-versions.env') }}-
 
       - name: Install pinned gate tools (verified)
         uses: ./core/.github/actions/setup-core-tools
         with:
           actionlint: "true"
+
+      - name: Assert gate tools resolve to the verified bindir
+        run: |
+          bindir="$HOME/.local/core-tools/bin"
+          p="$(command -v actionlint || true)"
+          echo "actionlint -> ${p:-<not found>}"
+          [ "$p" = "$bindir/actionlint" ] || { echo "::error::actionlint is '${p:-<not found>}', not the verified $bindir/actionlint"; exit 1; }
 
       - name: actionlint
         env:
