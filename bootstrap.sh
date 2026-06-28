@@ -117,8 +117,15 @@ provision() {
   blib_say "apk packages (from install/packages.txt)"
   local -a pkgs=()
   mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
-  apk_install "${pkgs[@]}"
-  blib_ok "apk packages requested: ${#pkgs[@]}"
+  # Guard the empty case: an all-comment/blank packages.txt yields a zero-length
+  # array, and `apk add` with no args errors out — aborting the whole bootstrap
+  # under `set -e`. Skip the install instead and carry on.
+  if ((${#pkgs[@]})); then
+    apk_install "${pkgs[@]}"
+    blib_ok "apk packages requested: ${#pkgs[@]}"
+  else
+    blib_warn "install/packages.txt lists no packages — skipping apk install"
+  fi
 
   # Tools not packaged (or that we build from source on musl). The starship and
   # mise installers detect musl and pull the correct *-musl build — safe here.
