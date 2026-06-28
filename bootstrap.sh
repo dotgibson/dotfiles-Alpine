@@ -118,8 +118,10 @@ provision() {
   local -a pkgs=()
   mapfile -t pkgs < <(blib_read_pkgs "$DOTFILES/install/packages.txt")
   # Guard the empty case: an all-comment/blank packages.txt yields a zero-length
-  # array, and `apk add` with no args errors out — aborting the whole bootstrap
-  # under `set -e`. Skip the install instead and carry on.
+  # array. apk_install wraps `apk add` in `if …; then` (errexit-exempt), so an
+  # empty list wouldn't abort — but it WOULD run `apk add` with no args, trip the
+  # "bulk install hit a snag" per-package fallback, and then log a misleading
+  # "0 requested" success. Skip the install instead and carry on.
   if ((${#pkgs[@]})); then
     apk_install "${pkgs[@]}"
     blib_ok "apk packages requested: ${#pkgs[@]}"
