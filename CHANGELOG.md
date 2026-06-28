@@ -3,7 +3,7 @@
 All notable changes to **dotfiles-core** are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Core is the single source of truth vendored into seven OS repos via
+Core is the single source of truth vendored into eight OS repos via
 `git subtree pull --prefix=core <core-remote> main --squash` (see `scripts/sync-core.sh`).
 Every entry below is therefore a change those repos receive on their next sync —
 this file is the human-readable record of _what_ a sync will bring, complementing
@@ -83,6 +83,18 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **`dotfiles-Defense` joins the fleet as the defensive (blue) Role.** The
+  three-layer model always had room for a second Role beside `dotfiles-Kali`;
+  defender-authored capability (Sigma rules, Sysmon baselines, Zeek/Suricata
+  tuning, SIEM content, the hunt/triage workflow, a Dockerized detection lab) now
+  has its own repo instead of living as attack-paired notes in Kali's
+  `PURPLE-TEAM.md`. Core is vendored into it like any OS/Role repo, so the fleet
+  grows: **nine → ten** config repos, **eight → nine** machine repos, **seven →
+  eight** Core-vendoring targets. This sync carries the count + Role-layer wording
+  updates fleet-wide (`README.md`, `CLAUDE.md`, `ARCHITECTURE.md`, `SECURITY.md`,
+  `CONTRIBUTING.md`, the issue templates) and adds `dotfiles-Defense` to
+  `scripts/os-repos.txt` so `sync-core.sh` fans Core into it. Docs/data only; no
+  behavioral change to Core.
 - **`bootstrap-lib.sh` gains `--only`/`--skip` module selection** (`lib/bootstrap-lib.sh`)
   — the shared scaffold can now wire a SUBSET of the Core groups: `zsh nvim tmux git
   prompt tools`. New `blib_select <--only|--skip> <csv>` (validates a comma-separated
@@ -223,6 +235,26 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **Startup nudges no longer execute under a substitution prompt** (`zsh/update.zsh`).
+  `_pkgup_notice` ("N updates available — run \`up\` to apply") and `_core_welcome`
+  ("dotfiles Core loaded — run \`core\`…") rendered their hints with `print -P` and wrapped
+  the verb in **backticks**. Under `setopt prompt_subst` — which starship and any
+  substitution prompt enable — `print -P` performs command substitution, so the backtick'd
+  word was _executed_ rather than printed: the update nudge fires from a precmd hook before
+  `up()` is defined, surfacing as `command not found: up` on every package-manager box (and,
+  once defined, silently triggering a privileged upgrade). Both hints now use single quotes
+  (`'up'` / `'core'`), which are literal under prompt expansion; the `NO_COLOR` branch already
+  used the safe `print -r`. Surfaced by a `make sync` audit failing on a starship MacBook. A
+  new `test-core.sh` regression seeds a cached count under `prompt_subst` with an `up()`
+  sentinel and asserts the nudge mentions `up` but never runs it.
+- **`dotfiles-Defense-PLAN.md` scaffold: `bootstrap.sh` `--links-only` was dead.** The
+  reproduced `bootstrap.sh` set `LINKS_ONLY` but never read it, so `--links-only` still ran
+  the host-tool/docker probe (and shellcheck flagged the unused var). Guard the probe with
+  `(( DO_CHECK && ! LINKS_ONLY ))` so `--links-only` truly just wires symlinks, and rewrite
+  the `(( missing == 0 )) && ok || warn` line as if/then/else. The scaffold is now
+  shellcheck-clean and was exercised end-to-end in a sandbox (`--links-only` wires Core +
+  the defense stage); the "validated" note now says so. Planning doc only (allowlisted
+  repo-meta) — nothing shipped/vendored.
 - **`gsync` runner + core-guard installer hardening** (review follow-up to the
   fan-out PRs). `.bin/sync-upstream.sh`: normalize to the git toplevel first so
   `gsync` works from any subdirectory (it is an absolute-path runner); use
