@@ -18,7 +18,7 @@ Alpine is the outlier of the set, so more changed here than on the other stamps.
 This is the lean / container / rescue-disk box — keep its layer small and don't
 fight the musl grain.
 
-## Install (fresh Alpine)
+## ⚡ Install (fresh Alpine)
 
 ```sh
 git clone <you>/dotfiles-Alpine ~/dotfiles-Alpine
@@ -34,7 +34,7 @@ detects which to use. Flag: `--links-only` (re-link without touching apk).
 Make sure the `community` repo is enabled in `/etc/apk/repositories` — most of
 the modern stack lives there.
 
-## Layout
+## 🗂️ Layout
 
 ```
 bootstrap.sh         apk provision + Core/OS symlink wiring (idempotent)
@@ -50,7 +50,7 @@ core/                vendored from dotfiles-core (git subtree; do not hand-edit)
 Load order in `.zshrc`: `core/tools → core/aliases → core/functions → core/fzf →
 core/bindings → core/plugins → core/op → os/alpine → local`.
 
-## Alpine specifics baked in (the things that actually bite)
+## 💡 Alpine specifics baked in (the things that actually bite)
 
 - **musl libc, not glibc.** Prebuilt glibc binaries won't run, so the stack comes
   from apk wherever possible. starship and mise are installed via their official

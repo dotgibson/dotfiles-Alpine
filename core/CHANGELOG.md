@@ -13,6 +13,16 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ## [Unreleased]
 
+## [v2.0.0] - 2026-06-28
+
+> **Breaking — keybindings realigned.** The zsh file-picker moved off `Ctrl+F` to
+> **`Ctrl+T`**, and the cross-shell keys were settled fleet-wide: **`Ctrl+E`** atuin
+> TUI, **`Ctrl+R`** quick fzf history, **`Ctrl+G`** jump-to-session (navi dropped its
+> `Ctrl+G` widget for the `navi` command), **`Alt+Z`** zoxide jump. Update muscle
+> memory and re-source your shell (or restart it) after the next `make sync`. This is
+> the breaking change that makes this release **2.0.0** rather than a 1.x bump;
+> everything else below is additive or a fix.
+
 ### Changed
 
 - **`/freshness-triage` now covers the CLI tool pins.** The routine reviewed zsh/nvim/
@@ -83,6 +93,39 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Added
 
+- **Auto-published GitHub Releases on tag push** (`.github/workflows/release.yml`).
+  Pushing a `vX.Y.Z` tag now publishes the GitHub Release automatically, finishing
+  the `make release … && make tag PUSH=1` path. The Release body is the curated
+  `CHANGELOG.md` section for that version (not a git-cliff commit digest — CHANGELOG
+  is the source-of-truth prose), and the job refuses to publish unless the tag is a
+  clean SemVer that matches `core.version` at the tagged commit and the section
+  exists. Uses the built-in `GITHUB_TOKEN` via the preinstalled `gh` CLI — no PAT,
+  no third-party action. Re-running updates the existing Release's notes idempotently.
+  Also refreshed `cliff.toml`'s header (the repo DOES git-tag now) and
+  `RELEASE-STRATEGY.md` (§5 checklist + §6) to match.
+- **Release-automation: the three gaps `RELEASE-STRATEGY.md` flagged are now
+  wired.** (1) `sync-core.sh` stamps a `core_tag` field (`git describe` of the
+  vendored commit) into each OS repo's `core.lock`, and `fleet-drift.sh` shows it
+  in the `RECORDED` column — so the drift dashboard speaks in named releases, not
+  just SHAs (the SHA still drives the verdict; the tag is display only, and the
+  line is emitted only once Core actually carries a tag, keeping `core.lock`
+  byte-identical to today until the first release). (2) A new `audit-arch` leg in
+  `ci.yml` runs the shell-scope audit inside `archlinux:latest` (rolling glibc
+  toolchain, newer than Ubuntu LTS), mirroring the existing `audit-alpine`
+  (musl/busybox) leg — so Core is proven on both named container userlands before
+  a tag. (3) `scripts/tag-release.sh` + `make tag` finish a release: commit
+  `core.version` + `CHANGELOG`, create the annotated `vX.Y.Z` tag, re-run the
+  audit gate; pushing is opt-in (`make tag PUSH=1`). `make release VERSION=X.Y.Z
+  && make tag` is now the whole cut end to end.
+- **`RELEASE-STRATEGY.md` — the cadence, tagging, and rollout policy.** The repo
+  shipped all the release _machinery_ (`core.version`, `scripts/release.sh`, the
+  `sync-core.sh` fan-out gate, `core.lock` provenance, the Monday freshness/drift
+  bots) but no documented _policy_ tying it together. The new doc adds that: Core
+  as the sole versioned unit, a three-track cadence (continuous / weekly pin bumps
+  / monthly + security tags), SemVer mapped to host blast-radius, why the
+  three-layer subtree model beats `common/`-plus-conditionals, and a canary-first
+  staged rollout so a Core release reaches one OS before all eight. Registered in the audit's
+  `META_ALLOWLIST`. Docs-only; no behavioral change.
 - **`dotfiles-Defense` joins the fleet as the defensive (blue) Role.** The
   three-layer model always had room for a second Role beside `dotfiles-Kali`;
   defender-authored capability (Sigma rules, Sysmon baselines, Zeek/Suricata
@@ -235,6 +278,13 @@ commit (`git tag -a vX.Y.Z -m vX.Y.Z`).
 
 ### Fixed
 
+- **`blib_set_login_shell` no longer trusts a non-executable `command -v zsh`.**
+  `command -v` also resolves aliases/functions, so a shadowed `zsh` could yield an
+  alias body rather than a path; it's now required to resolve to a real executable
+  (`[[ -x ]]`) before being handed to `chsh`/`usermod`. The `/etc/passwd` fallback
+  (used when `getent` is absent, e.g. busybox/Alpine) switched from a `grep "^$user:"`
+  regex to `awk -F: -v u="$user"`, so a username containing a regex metacharacter
+  can't mis-match. Robustness only; no behavior change for normal setups.
 - **Startup nudges no longer execute under a substitution prompt** (`zsh/update.zsh`).
   `_pkgup_notice` ("N updates available — run \`up\` to apply") and `_core_welcome`
   ("dotfiles Core loaded — run \`core\`…") rendered their hints with `print -P` and wrapped
