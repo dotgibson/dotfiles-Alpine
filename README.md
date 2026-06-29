@@ -1,4 +1,19 @@
-# dotfiles-Alpine
+<div align="center">
+
+# 🏔️ dotfiles-Alpine
+
+### Alpine — lean and musl-native.
+
+The Alpine layer (apk · musl · doas) — lean, for containers and minimal boxes.
+
+`apk` · `musl` · `nvim` · `tmux`
+
+[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://gerrrt.github.io/dotfiles-web/)
+[![Alpine](https://img.shields.io/badge/Alpine-lean-7dcfff?style=flat-square)]()
+
+</div>
+
+---
 
 The **OS-native layer** for Alpine Linux. Core (zsh/tmux/nvim/git) is vendored
 under `core/` from [`dotfiles-core`](../dotfiles-core); this repo adds only what
