@@ -1,17 +1,11 @@
-<div align="center">
-
 # 🏔️ dotfiles-Alpine
 
-### Alpine — lean and musl-native.
+**Alpine — lean and musl-native.** The Alpine layer (apk · musl · doas) — lean,
+for containers and minimal boxes.
 
-The Alpine layer (apk · musl · doas) — lean, for containers and minimal boxes.
+`apk` · `musl` · `nvim` · `tmux`
 
-`apk` `musl` `nvim` `tmux`
-
-[![showcase](https://img.shields.io/badge/▶-showcase-7aa2f7?style=flat-square)](https://gerrrt.github.io/dotfiles-web)
-[![{badge}](https://img.shields.io/badge/Alpine-lean-7dcfff?style=flat-square)]()
-
-</div>
+[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://gerrrt.github.io/dotfiles-web/) ![Alpine](https://img.shields.io/badge/Alpine-lean-7dcfff?style=flat-square)
 
 ---
 
