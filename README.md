@@ -5,7 +5,7 @@ for containers and minimal boxes.
 
 `apk` · `musl` · `nvim` · `tmux`
 
-[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://gerrrt.github.io/dotfiles-web/) ![Alpine](https://img.shields.io/badge/Alpine-lean-7dcfff?style=flat-square)
+[![showcase](https://img.shields.io/badge/showcase-live-7aa2f7?style=flat-square)](https://dotgibson.github.io/dotfiles-web/) ![Alpine](https://img.shields.io/badge/Alpine-lean-7dcfff?style=flat-square)
 
 ---
 
