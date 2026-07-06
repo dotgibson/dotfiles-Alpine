@@ -205,5 +205,5 @@ Project Link: [dotgibson](https://github.com/dotgibson/)
 [musl-url]: https://musl.libc.org
 [busybox-shield]: https://img.shields.io/badge/BusyBox-425265?style=flat-square
 [busybox-url]: https://busybox.net
-[doas-shield]: https://img.shields.io/badge/doas-425265?style=flat-square
+[doas-shield]: https://img.shields.io/github/v/tag/Duncaen/OpenDoas?sort=semver&style=flat-square&logo=gnometerminal&logoColor=24283B&label=doas&labelColor=BB9AF7&color=3D59A1
 [doas-url]: https://github.com/Duncaen/OpenDoas
