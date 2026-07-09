@@ -17,6 +17,12 @@
 # re-wire a subset of configs without touching apk.
 #
 # Run as root, OR as a user with doas/sudo configured (Alpine defaults to doas).
+#
+# PREREQUISITE — bash: this script is bash (shebang above; it uses arrays + mapfile),
+# but a fresh Alpine ships only busybox ash, so bash is NOT present by default. Install
+# it FIRST or the kernel can't exec this file ("bad interpreter: bash: not found"):
+#     apk add bash     # (or: doas apk add bash)
+# bash is also listed in install/packages.txt so a full provision keeps it installed.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
