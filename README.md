@@ -101,13 +101,16 @@ No new languages — this layer is shell and package config over
 
 ### Prerequisites
 
-An Alpine box and **Git**. Enable the **`community`** repo in
-`/etc/apk/repositories` first — most of the modern stack lives there. Everything
+An Alpine box, **Git**, and **`bash`**. A fresh Alpine ships only busybox `ash`,
+but `bootstrap.sh` is a bash script — install it first with `apk add bash` (or
+`doas apk add bash`), or the script won't exec. Also enable the **`community`**
+repo in `/etc/apk/repositories` — most of the modern stack lives there. Everything
 else is provisioned by `bootstrap.sh`.
 
 ### Installation
 
 ```sh
+apk add bash git          # bash: bootstrap is a bash script (doas apk add … as non-root)
 git clone https://github.com/dotgibson/dotfiles-Alpine ~/dotfiles-Alpine
 cd ~/dotfiles-Alpine
 ./bootstrap.sh

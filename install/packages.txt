@@ -6,6 +6,9 @@
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
 
 # ── shell + multiplexer ───────────────────────────────────────
+bash           # bootstrap.sh is a bash script; a fresh Alpine ships only busybox ash,
+               # so `apk add bash` is a PREREQUISITE to run it (see README) — declared
+               # here too so a full provision keeps it installed
 zsh            # Alpine's default shell is ash — zsh must be added explicitly
 tmux
 
