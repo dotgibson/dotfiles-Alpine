@@ -118,14 +118,22 @@ apk_install() {
 # that live only in Alpine's `testing` repo (duf, glow), plus sesh — none packaged in
 # `community`. `go install` produces a static (musl-safe) binary; if Go is absent we
 # defer via mise, else print a hint. Never aborts (errexit-exempt). ──────────────
+# go install drops binaries in ~/go/bin, which the shell layer does NOT put on
+# PATH (it prefixes ~/.local/bin + ~/.cargo/bin) — so point GOBIN at ~/.local/bin.
 _dotfiles_go_install() { # <import-path@version> <binary-name>
+  [ "$#" -ge 2 ] || return 0
   if command -v "$2" >/dev/null 2>&1; then return 0; fi
-  # go install drops binaries in ~/go/bin, which the shell layer does NOT put on
-  # PATH (it prefixes ~/.local/bin + ~/.cargo/bin) — so point GOBIN at ~/.local/bin.
-  local gobin="$HOME/.local/bin"; mkdir -p "$gobin"
-  if command -v go >/dev/null 2>&1; then GOBIN="$gobin" go install "$1" >/dev/null 2>&1 || true
-  elif command -v mise >/dev/null 2>&1; then GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 || true
-  else echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"; fi
+  gobin="$HOME/.local/bin"
+  mkdir -p "$gobin" 2>/dev/null || true
+  if command -v go >/dev/null 2>&1; then
+    GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  elif command -v mise >/dev/null 2>&1; then
+    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  else
+    echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
+  fi
   return 0
 }
 
@@ -192,7 +200,7 @@ provision() {
     blib_say "op — 1Password CLI (official Alpine repo — native musl apk)"
     # shellcheck disable=SC2086  # $SU: single token (doas/sudo) or empty (root)
     if ! grep -q '1password.com/linux/alpinelinux' /etc/apk/repositories 2>/dev/null; then
-      echo "https://downloads.1password.com/linux/alpinelinux/stable/" | $SU tee -a /etc/apk/repositories >/dev/null
+      echo "https://downloads.1password.com/linux/alpinelinux/stable/" | $SU tee -a /etc/apk/repositories >/dev/null || true
     fi
     # shellcheck disable=SC2086
     $SU wget -q https://downloads.1password.com/linux/keys/alpinelinux/support@1password.com-61ddfc31.rsa.pub -P /etc/apk/keys 2>/dev/null || true
