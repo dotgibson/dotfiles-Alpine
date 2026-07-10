@@ -120,9 +120,12 @@ apk_install() {
 # defer via mise, else print a hint. Never aborts (errexit-exempt). ──────────────
 _dotfiles_go_install() { # <import-path@version> <binary-name>
   if command -v "$2" >/dev/null 2>&1; then return 0; fi
-  if command -v go >/dev/null 2>&1; then go install "$1" >/dev/null 2>&1 || true
-  elif command -v mise >/dev/null 2>&1; then mise exec go@latest -- go install "$1" >/dev/null 2>&1 || true
-  else echo "   $2: needs Go — install later with: go install $1"; fi
+  # go install drops binaries in ~/go/bin, which the shell layer does NOT put on
+  # PATH (it prefixes ~/.local/bin + ~/.cargo/bin) — so point GOBIN at ~/.local/bin.
+  local gobin="$HOME/.local/bin"; mkdir -p "$gobin"
+  if command -v go >/dev/null 2>&1; then GOBIN="$gobin" go install "$1" >/dev/null 2>&1 || true
+  elif command -v mise >/dev/null 2>&1; then GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 || true
+  else echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"; fi
   return 0
 }
 
