@@ -185,10 +185,13 @@ provision() {
       echo "   tree-sitter-cli build failed; retry later: cargo install tree-sitter-cli"
   fi
 
-  # ── go-installed core-doctor tools: duf + glow are Alpine `testing`-only, sesh is
-  # unpackaged. `go install` yields a static (musl-safe) binary; presence-guarded and
-  # best-effort, so a box without Go just gets a hint and provisioning continues. ──
-  blib_say "duf / glow / sesh (go install — testing-only or unpackaged; musl-safe static)"
+  # ── go-installed core-doctor tools. sesh is unpackaged on Alpine. duf + glow are
+  # now in `community` (installed via packages.txt on current stable); the guarded
+  # go-install below is a FALLBACK that only fires on an older snapshot where they
+  # were still `testing`-only and `apk add` skipped them. `go install` yields a static
+  # (musl-safe) binary; presence-guarded + best-effort, so it no-ops when already
+  # apk-installed, and a box without Go just gets a hint. ──────────────────────────
+  blib_say "duf / glow / sesh (go install — sesh unpackaged; duf/glow fallback if not in apk; musl-safe static)"
   _dotfiles_go_install github.com/muesli/duf@latest duf
   _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
