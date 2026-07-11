@@ -163,7 +163,7 @@ provision() {
   # atuin is in Alpine repos (in packages.txt); installer below is just a fallback.
   if ! command -v starship >/dev/null; then
     blib_say "starship (official installer — musl build)"
-    curl -fsSL https://starship.rs/install.sh | sh -s -- -y >/dev/null
+    curl -fsSL https://starship.rs/install.sh | sh -s -- -y >/dev/null || true
   fi
   if ! command -v atuin >/dev/null; then
     blib_say "atuin (official installer — fallback; usually apk-installed)"
