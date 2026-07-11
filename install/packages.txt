@@ -28,6 +28,26 @@ btop           # top/htop
 tealdeer       # tldr (binary: tldr)
 atuin          # shell history (in Alpine repos — no installer needed)
 
+# ── modern CLI extras (core-doctor parity; community repo) ─────
+# The rest of core-doctor's modern-CLI set — all in `community` on current stable
+# (verified 3.24). duf/glow are here too now; bootstrap.sh ALSO keeps a
+# `command -v`-guarded `go install` fallback for them, which only fires on an older
+# snapshot where they were still `testing`-only (so `apk add` skipped them).
+# apk_install() (bootstrap.sh) is resilient — a name missing on this box (e.g. `sd`
+# if it hasn't landed) is skipped per-package, never fatal.
+dust           # du (dust)
+procs          # ps
+gron           # greppable JSON
+gum            # shell-script UI toolkit (charm)
+xh             # HTTPie-style HTTP client
+duf            # df / disk usage (in community on stable; go-install fallback in bootstrap)
+glow           # markdown renderer (in community on stable; go-install fallback in bootstrap)
+doggo          # dig / DNS client (in community — no go install needed)
+carapace       # multi-shell completion engine (in community — no go install needed)
+sd             # sed-style find & replace (MED-confidence on Alpine; verify: apk search -e sd)
+yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
+               # Do NOT use plain `yq` (that's the Python kislyuk yq, a different tool).
+
 # ── editor + git workflow ─────────────────────────────────────
 neovim
 git            # `git subtree` ships with git on Alpine (no separate package)

@@ -114,6 +114,29 @@ apk_install() {
   done
 }
 
+# ── go-installed tools: presence-guarded, best-effort. Used for core-doctor tools
+# that live only in Alpine's `testing` repo (duf, glow), plus sesh — none packaged in
+# `community`. `go install` produces a static (musl-safe) binary; if Go is absent we
+# defer via mise, else print a hint. Never aborts (errexit-exempt). ──────────────
+# go install drops binaries in ~/go/bin, which the shell layer does NOT put on
+# PATH (it prefixes ~/.local/bin + ~/.cargo/bin) — so point GOBIN at ~/.local/bin.
+_dotfiles_go_install() { # <import-path@version> <binary-name>
+  [ "$#" -ge 2 ] || return 0
+  if command -v "$2" >/dev/null 2>&1; then return 0; fi
+  gobin="$HOME/.local/bin"
+  mkdir -p "$gobin" 2>/dev/null || true
+  if command -v go >/dev/null 2>&1; then
+    GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  elif command -v mise >/dev/null 2>&1; then
+    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+      echo "   $2: go install failed — retry later: GOBIN=$gobin go install $1"
+  else
+    echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
+  fi
+  return 0
+}
+
 provision() {
   # shellcheck disable=SC2086  # $SU: single token or empty (root)
   blib_say "apk update"
@@ -160,6 +183,33 @@ provision() {
     blib_say "tree-sitter-cli (cargo build)"
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
       echo "   tree-sitter-cli build failed; retry later: cargo install tree-sitter-cli"
+  fi
+
+  # ── go-installed core-doctor tools. sesh is unpackaged on Alpine. duf + glow are
+  # now in `community` (installed via packages.txt on current stable); the guarded
+  # go-install below is a FALLBACK that only fires on an older snapshot where they
+  # were still `testing`-only and `apk add` skipped them. `go install` yields a static
+  # (musl-safe) binary; presence-guarded + best-effort, so it no-ops when already
+  # apk-installed, and a box without Go just gets a hint. ──────────────────────────
+  blib_say "duf / glow / sesh (go install — sesh unpackaged; duf/glow fallback if not in apk; musl-safe static)"
+  _dotfiles_go_install github.com/muesli/duf@latest duf
+  _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
+  _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
+
+  # ── op (1Password CLI): native musl apk from 1Password's official Alpine repo —
+  # NOT a glibc vendor binary. Presence-guarded; best-effort so a fetch/network hiccup
+  # never aborts bootstrap. ────────────────────────────────────────────────────────
+  if ! command -v op >/dev/null 2>&1; then
+    blib_say "op — 1Password CLI (official Alpine repo — native musl apk)"
+    # shellcheck disable=SC2086  # $SU: single token (doas/sudo) or empty (root)
+    if ! grep -q '1password.com/linux/alpinelinux' /etc/apk/repositories 2>/dev/null; then
+      echo "https://downloads.1password.com/linux/alpinelinux/stable/" | $SU tee -a /etc/apk/repositories >/dev/null || true
+    fi
+    # shellcheck disable=SC2086
+    $SU wget -q https://downloads.1password.com/linux/keys/alpinelinux/support@1password.com-61ddfc31.rsa.pub -P /etc/apk/keys 2>/dev/null || true
+    # shellcheck disable=SC2086
+    { $SU apk update >/dev/null 2>&1 && $SU apk add 1password-cli >/dev/null 2>&1; } ||
+      echo "   op: install skipped — add it later with: $SU apk add 1password-cli"
   fi
 
   # ── WSL: install /etc/wsl.conf. NOTE: no systemd=true — Alpine uses OpenRC. ───
