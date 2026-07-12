@@ -182,7 +182,7 @@ provision() {
   if ! command -v tree-sitter >/dev/null && command -v cargo >/dev/null; then
     blib_say "tree-sitter-cli (cargo build)"
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
-      echo "   tree-sitter-cli build failed; retry later: cargo install tree-sitter-cli"
+      echo "   tree-sitter-cli build failed; retry later: cargo install --locked tree-sitter-cli"
   fi
   # tealdeer (tldr): `testing`-only on Alpine (never in `community`), so not in
   # packages.txt — build from source via cargo. Presence-guarded on the `tldr`
@@ -190,7 +190,7 @@ provision() {
   if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
     blib_say "tealdeer (cargo build — tldr client; testing-only on Alpine)"
     cargo install --locked tealdeer >/dev/null 2>&1 ||
-      echo "   tealdeer build failed; retry later: cargo install tealdeer"
+      echo "   tealdeer build failed; retry later: cargo install --locked tealdeer"
   fi
 
   # ── go-installed core-doctor tools. sesh is unpackaged on Alpine; duf + glow are

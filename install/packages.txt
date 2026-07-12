@@ -26,7 +26,7 @@ fzf            # fuzzy finder
 delta          # git pager / diffs  (Alpine package is `delta`, NOT git-delta)
 btop           # top/htop
 # tealdeer (tldr) is testing-only on Alpine (never in `community`) → built from
-#   source via `cargo install tealdeer` in bootstrap.sh (see file header).
+#   source via `cargo install --locked tealdeer` in bootstrap.sh (see header).
 atuin          # shell history (in Alpine repos — no installer needed)
 
 # ── modern CLI extras (core-doctor parity; community repo) ─────
