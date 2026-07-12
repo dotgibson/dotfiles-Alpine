@@ -184,14 +184,21 @@ provision() {
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
       echo "   tree-sitter-cli build failed; retry later: cargo install tree-sitter-cli"
   fi
+  # tealdeer (tldr): `testing`-only on Alpine (never in `community`), so not in
+  # packages.txt — build from source via cargo. Presence-guarded on the `tldr`
+  # binary; best-effort so a build hiccup never aborts bootstrap.
+  if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
+    blib_say "tealdeer (cargo build — tldr client; testing-only on Alpine)"
+    cargo install --locked tealdeer >/dev/null 2>&1 ||
+      echo "   tealdeer build failed; retry later: cargo install tealdeer"
+  fi
 
-  # ── go-installed core-doctor tools. sesh is unpackaged on Alpine. duf + glow are
-  # now in `community` (installed via packages.txt on current stable); the guarded
-  # go-install below is a FALLBACK that only fires on an older snapshot where they
-  # were still `testing`-only and `apk add` skipped them. `go install` yields a static
-  # (musl-safe) binary; presence-guarded + best-effort, so it no-ops when already
-  # apk-installed, and a box without Go just gets a hint. ──────────────────────────
-  blib_say "duf / glow / sesh (go install — sesh unpackaged; duf/glow fallback if not in apk; musl-safe static)"
+  # ── go-installed core-doctor tools. sesh is unpackaged on Alpine; duf + glow are
+  # `testing`-only (NOT in `community` on current stable), so `apk add` skips them —
+  # `go install` here is their REAL source, not a fallback. `go install` yields a
+  # static (musl-safe) binary; presence-guarded + best-effort, so it no-ops when a
+  # tool is already present, and a box without Go just gets a hint. ────────────────
+  blib_say "duf / glow / sesh (go install — testing-only/unpackaged on Alpine; musl-safe static)"
   _dotfiles_go_install github.com/muesli/duf@latest duf
   _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh

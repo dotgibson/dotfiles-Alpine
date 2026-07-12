@@ -1,7 +1,7 @@
 # dotfiles-Alpine/install/packages.txt
 # apk package names for the modern terminal stack. One per line; # comments ok.
-# Tools NOT packaged (starship) or built from source on musl (yazi, tree-sitter)
-# are handled by bootstrap.sh — keep them OUT of here.
+# Tools NOT packaged (starship) or built from source on musl (yazi, tree-sitter,
+# tealdeer) are handled by bootstrap.sh — keep them OUT of here.
 # Most modern tools live in the `community` repo — make sure it's enabled in
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
 
@@ -25,14 +25,17 @@ zoxide         # cd
 fzf            # fuzzy finder
 delta          # git pager / diffs  (Alpine package is `delta`, NOT git-delta)
 btop           # top/htop
-tealdeer       # tldr (binary: tldr)
+# tealdeer (tldr) is testing-only on Alpine (never in `community`) → built from
+#   source via `cargo install tealdeer` in bootstrap.sh (see file header).
 atuin          # shell history (in Alpine repos — no installer needed)
 
 # ── modern CLI extras (core-doctor parity; community repo) ─────
-# The rest of core-doctor's modern-CLI set — all in `community` on current stable
-# (verified 3.24). duf/glow are here too now; bootstrap.sh ALSO keeps a
-# `command -v`-guarded `go install` fallback for them, which only fires on an older
-# snapshot where they were still `testing`-only (so `apk add` skipped them).
+# Most of core-doctor's modern-CLI set is in `community` on current stable. The
+# exceptions are duf + glow: still `testing`-only (NOT in `community` on stable),
+# so `apk add` skips them here — bootstrap.sh installs them from source via a
+# `command -v`-guarded `go install` (static, musl-safe), which is their REAL
+# source, not a mere fallback. They're kept in this list only as a best-effort in
+# case a future stable promotes them to `community`.
 # apk_install() (bootstrap.sh) is resilient — a name missing on this box (e.g. `sd`
 # if it hasn't landed) is skipped per-package, never fatal.
 dust           # du (dust)
@@ -40,8 +43,8 @@ procs          # ps
 gron           # greppable JSON
 gum            # shell-script UI toolkit (charm)
 xh             # HTTPie-style HTTP client
-duf            # df / disk usage (in community on stable; go-install fallback in bootstrap)
-glow           # markdown renderer (in community on stable; go-install fallback in bootstrap)
+duf            # df / disk usage (testing-only on stable → go install in bootstrap)
+glow           # markdown renderer (testing-only on stable → go install in bootstrap)
 doggo          # dig / DNS client (in community — no go install needed)
 carapace       # multi-shell completion engine (in community — no go install needed)
 sd             # sed-style find & replace (MED-confidence on Alpine; verify: apk search -e sd)
