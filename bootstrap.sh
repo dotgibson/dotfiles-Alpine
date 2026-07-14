@@ -198,10 +198,11 @@ provision() {
   # `go install` here is their REAL source, not a fallback. `go install` yields a
   # static (musl-safe) binary; presence-guarded + best-effort, so it no-ops when a
   # tool is already present, and a box without Go just gets a hint. ────────────────
-  blib_say "duf / glow / sesh (go install — testing-only/unpackaged on Alpine; musl-safe static)"
+  blib_say "duf / glow / sesh / viddy (go install — testing-only/unpackaged on Alpine; musl-safe static)"
   _dotfiles_go_install github.com/muesli/duf@latest duf
   _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
+  _dotfiles_go_install github.com/sachaos/viddy@latest viddy       # watch->viddy (HAVE_VIDDY-guarded)
 
   # ── op (1Password CLI): native musl apk from 1Password's official Alpine repo —
   # NOT a glibc vendor binary. Presence-guarded; best-effort so a fetch/network hiccup
