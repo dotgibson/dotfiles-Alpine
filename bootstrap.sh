@@ -192,6 +192,14 @@ provision() {
     cargo install --locked tealdeer >/dev/null 2>&1 ||
       echo "   tealdeer build failed; retry later: cargo install --locked tealdeer"
   fi
+  # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) is a Rust
+  # CLI — build from source via cargo. On musl this compiles the musl target (a
+  # static, musl-safe binary), presence-guarded + best-effort.
+  if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
+    blib_say "viddy (cargo build — watch replacement; Rust)"
+    cargo install --locked viddy >/dev/null 2>&1 ||
+      echo "   viddy build failed; retry later: cargo install --locked viddy"
+  fi
 
   # ── go-installed core-doctor tools. sesh is unpackaged on Alpine; duf + glow are
   # `testing`-only (NOT in `community` on current stable), so `apk add` skips them —
