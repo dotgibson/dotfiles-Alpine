@@ -50,11 +50,17 @@ carapace       # multi-shell completion engine (in community — no go install n
 sd             # sed-style find & replace (MED-confidence on Alpine; verify: apk search -e sd)
 yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
                # Do NOT use plain `yq` (that's the Python kislyuk yq, a different tool).
+# Opt-in companions: Core only wires these up when present (HAVE_DIFFT / HAVE_ASTGREP),
+# so they're additive, not required. Both are first-class musl builds in `community`
+# (no cargo/go fallback needed), so they belong in the apk list rather than bootstrap.
+difftastic     # structural git diff (difft) — gated by Core on HAVE_DIFFT
+ast-grep       # AST-aware structural search/rewrite (`ast-grep`) — gated by Core on HAVE_ASTGREP
 
 # ── editor + git workflow ─────────────────────────────────────
 neovim
 git            # `git subtree` ships with git on Alpine (no separate package)
-openssh-client # ssh / ssh-keygen / ssh-agent
+openssh-client-default # ssh / ssh-keygen / ssh-agent — bare `openssh-client` is now
+               # only a virtual `provides`; the -default variant is the real package
 lazygit
 
 # ── clipboard — OPTIONAL: pulls X/Wayland libs. On a headless/container Alpine
