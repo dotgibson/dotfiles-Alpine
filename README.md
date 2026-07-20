@@ -133,7 +133,7 @@ prompt — comes from vendored Core; this repo owns the Alpine specifics:
 
 - `bootstrap.sh` — `apk` provision + Core/OS symlink wiring (idempotent)
 - `install/packages.txt` — the `apk` package list (modern CLI stack)
-- `os/alpine.zsh` — clipboard + package-manager aliases → `~/.config/zsh/os.zsh`
+- `os/alpine.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
 - `wsl/wsl.conf` — installed to `/etc/wsl.conf` on WSL (no systemd — OpenRC)
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 

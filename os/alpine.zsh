@@ -1,6 +1,6 @@
 # dotfiles-Alpine/os/alpine.zsh
 # ──────────────────────────────────────────────────────────────────────────────
-# The Alpine OS-native shell layer. Symlinked to ~/.config/zsh/os.zsh and loaded
+# The Alpine OS-native shell layer. Symlinked to ~/.config/zsh/80-os.zsh and loaded
 # AFTER Core (tools/aliases/functions). Alpine-specific only.
 #
 # Alpine realities reflected here: doas (not sudo), apk (not dnf), musl, and a
