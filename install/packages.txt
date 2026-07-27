@@ -84,6 +84,7 @@ py3-pynvim     # pynvim — the Python 3 provider module (Alpine name)
 curl
 wget
 jq
+w3m            # terminal web browser (text-mode; in community repo)
 gawk
 direnv
 iproute2       # full `ip` — busybox's `ip` applet lacks `-brief`, which the `localip`
