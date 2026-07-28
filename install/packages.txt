@@ -1,12 +1,12 @@
 # dotfiles-Alpine/install/packages.txt
 # apk package names for the modern terminal stack. One per line; # comments ok.
-# Tools still built from source on musl (tealdeer — testing-only; duf/glow/sesh via
-# go install) are handled by bootstrap.sh — keep them OUT of here. Tools that recently
-# landed in `community` (starship, yazi, tree-sitter-cli, viddy) are now apk-installed
-# below; bootstrap.sh keeps a presence-guarded source build as a fallback for boxes
-# where the community package is missing.
 # Most modern tools live in the `community` repo — make sure it's enabled in
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
+# A few tools are NOT listed here and are built from source in bootstrap.sh instead:
+# tealdeer (testing-only) and sesh (go install). duf/glow are testing-only too but
+# stay in the list as a best-effort (apk skips them; bootstrap go-installs them).
+# starship, yazi, tree-sitter-cli and viddy recently landed in `community` and are
+# apk-installed below, with bootstrap keeping a presence-guarded source build as a fallback.
 
 # ── shell + multiplexer ───────────────────────────────────────
 bash           # bootstrap.sh is a bash script; a fresh Alpine ships only busybox ash,
@@ -34,10 +34,11 @@ atuin          # shell history (in Alpine repos — no installer needed)
 
 # ── recently promoted to `community` (were bootstrap source-builds until v3.24) ──
 # apk installs the native musl build first; bootstrap.sh's cargo/curl blocks are now
-# presence-guarded fallbacks that skip when apk already provided the binary.
+# presence-guarded fallbacks that skip when apk already provided the binary. The
+# community tree-sitter-cli IS the musl build and clears nvim-treesitter's >=0.26.1 floor.
 starship       # prompt (musl build in community; official installer kept as fallback)
 yazi           # file manager (community; cargo build kept as fallback)
-tree-sitter-cli # nvim parser CLI — the community build IS the musl build (>=0.26.1 floor met)
+tree-sitter-cli  # nvim parser CLI (see note above)
 viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarded)
 
 # ── modern CLI extras (core-doctor parity; community repo) ─────
