@@ -158,9 +158,11 @@ provision() {
     blib_warn "install/packages.txt lists no packages — skipping apk install"
   fi
 
-  # Tools not packaged (or that we build from source on musl). The starship and
-  # mise installers detect musl and pull the correct *-musl build — safe here.
-  # atuin is in Alpine repos (in packages.txt); installer below is just a fallback.
+  # Source-build fallbacks. starship, yazi, tree-sitter-cli and viddy now ship in
+  # `community` (listed in packages.txt) so apk installs the native musl build first;
+  # the presence-guarded blocks below only fire on a box where apk missed the package.
+  # The starship/mise installers detect musl and pull the correct *-musl build; atuin
+  # is in Alpine repos too — its installer below is likewise just a fallback.
   if ! command -v starship >/dev/null; then
     blib_say "starship (official installer — musl build)"
     curl -fsSL https://starship.rs/install.sh | sh -s -- -y >/dev/null || true
@@ -173,8 +175,9 @@ provision() {
     blib_say "mise (official installer — musl build)"
     curl -fsSL https://mise.run | sh >/dev/null 2>&1 || true
   fi
-  # yazi + tree-sitter-cli: not packaged → build from source via cargo. On musl
-  # this compiles against the musl target (needs build-base, in packages.txt).
+  # yazi + tree-sitter-cli: apk installs the community musl build first (packages.txt);
+  # this cargo build is the fallback if apk missed it. On musl it compiles against the
+  # musl target (needs build-base, in packages.txt).
   if ! command -v yazi >/dev/null && command -v cargo >/dev/null; then
     blib_say "yazi (cargo build — slow on musl)"
     cargo install --locked yazi-fs yazi-cli >/dev/null 2>&1 || true
@@ -192,9 +195,9 @@ provision() {
     cargo install --locked tealdeer >/dev/null 2>&1 ||
       echo "   tealdeer build failed; retry later: cargo install --locked tealdeer"
   fi
-  # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) is a Rust
-  # CLI — build from source via cargo. On musl this compiles the musl target (a
-  # static, musl-safe binary), presence-guarded + best-effort.
+  # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) now ships
+  # in `community` (packages.txt) — apk installs it first; this cargo build is the
+  # fallback. On musl it compiles the musl target (static, musl-safe), presence-guarded.
   if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
     blib_say "viddy (cargo build — watch replacement; Rust)"
     cargo install --locked viddy >/dev/null 2>&1 ||

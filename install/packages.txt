@@ -1,7 +1,10 @@
 # dotfiles-Alpine/install/packages.txt
 # apk package names for the modern terminal stack. One per line; # comments ok.
-# Tools NOT packaged (starship) or built from source on musl (yazi, tree-sitter,
-# tealdeer) are handled by bootstrap.sh — keep them OUT of here.
+# Tools still built from source on musl (tealdeer — testing-only; duf/glow/sesh via
+# go install) are handled by bootstrap.sh — keep them OUT of here. Tools that recently
+# landed in `community` (starship, yazi, tree-sitter-cli, viddy) are now apk-installed
+# below; bootstrap.sh keeps a presence-guarded source build as a fallback for boxes
+# where the community package is missing.
 # Most modern tools live in the `community` repo — make sure it's enabled in
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
 
@@ -29,6 +32,14 @@ btop           # top/htop
 #   source via `cargo install --locked tealdeer` in bootstrap.sh (see header).
 atuin          # shell history (in Alpine repos — no installer needed)
 
+# ── recently promoted to `community` (were bootstrap source-builds until v3.24) ──
+# apk installs the native musl build first; bootstrap.sh's cargo/curl blocks are now
+# presence-guarded fallbacks that skip when apk already provided the binary.
+starship       # prompt (musl build in community; official installer kept as fallback)
+yazi           # file manager (community; cargo build kept as fallback)
+tree-sitter-cli # nvim parser CLI — the community build IS the musl build (>=0.26.1 floor met)
+viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarded)
+
 # ── modern CLI extras (core-doctor parity; community repo) ─────
 # Most of core-doctor's modern-CLI set is in `community` on current stable. The
 # exceptions are duf + glow: still `testing`-only (NOT in `community` on stable),
@@ -47,7 +58,7 @@ duf            # df / disk usage (testing-only on stable → go install in boots
 glow           # markdown renderer (testing-only on stable → go install in bootstrap)
 doggo          # dig / DNS client (in community — no go install needed)
 carapace       # multi-shell completion engine (in community — no go install needed)
-sd             # sed-style find & replace (MED-confidence on Alpine; verify: apk search -e sd)
+sd             # sed-style find & replace (in community)
 yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
                # Do NOT use plain `yq` (that's the Python kislyuk yq, a different tool).
 # Opt-in companions: Core only wires these up when present (HAVE_DIFFT / HAVE_ASTGREP),
