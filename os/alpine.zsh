@@ -82,6 +82,34 @@ alias apkv='apk version'           # show upgradable packages
 # apk has no transaction "undo"; keep installs deliberate. `apk cache` manages
 # the local package cache if you enable it.
 
+# ── atuin daemon: the no-systemd path (dotfiles-core#335) ─────────────────────
+# Core ships atuin/config.toml with [daemon] OFF; the per-machine flip is atuin's own env
+# override, set HERE — never by editing that vendored file, which is identical across eight
+# repos and overwritten on the next sync.
+#
+# Alpine is the case the design was shaped around: OpenRC has no per-user service
+# supervision, so there is no unit to install and nothing to enable. AUTOSTART hands the
+# lifecycle to the atuin client itself, which starts and health-checks the daemon on demand.
+# Core's guard (00-tools.zsh) deliberately STANDS DOWN when it sees AUTOSTART — with the
+# client supervising, an absent socket is its cue to start one, not a fault to disable on.
+# (AUTOSTART is mutually exclusive with systemd_socket; we use neither a socket unit nor a
+# service, so that never applies here.)
+#
+# NOT in a container. This repo targets containers as much as hosts, and a per-container
+# history daemon buys nothing: the container usually outlives one shell by seconds, and the
+# daemon would be started and killed with it. Both markers are checked because Docker writes
+# /.dockerenv while Podman and most OCI runtimes write /run/.containerenv.
+# Override with CORE_ATUIN_DAEMON=1 in ~/.config/zsh/99-local.zsh for a long-lived container
+# where the daemon does pay (a dev container you keep for days).
+if [[ -n ${HAVE_ATUIN:-} ]]; then
+  if [[ -f /.dockerenv || -f /run/.containerenv ]] && [[ ${CORE_ATUIN_DAEMON:-} != 1 ]]; then
+    : # containerised → leave the daemon off; atuin writes SQLite directly, as Core ships it
+  else
+    export ATUIN_DAEMON__ENABLED=true
+    export ATUIN_DAEMON__AUTOSTART=true
+  fi
+fi
+
 unset _ASU _IS_WSL
 
 # ── auto-start/attach tmux for interactive terminals ─────────────────────────

@@ -171,6 +171,26 @@ provision() {
     blib_say "atuin (official installer — fallback; usually apk-installed)"
     curl -fsSL https://setup.atuin.sh | sh >/dev/null 2>&1 || true
   fi
+  # Only reachable via the fallback above: apk puts atuin in /usr/bin, but the installer
+  # hard-codes ~/.atuin/bin (install.sh: ATUIN_BIN="$HOME/.atuin/bin/atuin") and appends its
+  # init line to ~/.zshrc — which wire_links() then REPLACES with the managed loader. Since
+  # core/zsh/00-tools.zsh prepends only ~/.local/bin before probing for tools, an
+  # installer-provisioned atuin would be invisible to a Core shell: no HAVE_ATUIN, no cached
+  # init, no Ctrl+E, and the daemon exports in os/alpine.zsh inert. Link it where Core looks.
+  # (Same fix as dotfiles-Fedora#80, where the installer path is the NORM rather than a fallback.)
+  if [[ -x "$HOME/.atuin/bin/atuin" ]] && ! command -v atuin >/dev/null 2>&1; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$HOME/.atuin/bin/atuin" "$HOME/.local/bin/atuin"
+    blib_ok "linked ~/.atuin/bin/atuin -> ~/.local/bin/atuin (so 00-tools.zsh can see it)"
+  fi
+  # atuin daemon (dotfiles-core#335): there is nothing to INSTALL here — OpenRC has no
+  # per-user supervision, so os/alpine.zsh sets ATUIN_DAEMON__AUTOSTART and the atuin client
+  # supervises its own daemon. What is worth doing once, here, is telling the operator when
+  # the installed build cannot honour that, rather than leaving a silently-inert export: a
+  # per-shell probe would cost a fork on every startup, which is the budget this stack guards.
+  if command -v atuin >/dev/null 2>&1 && ! atuin daemon --help >/dev/null 2>&1; then
+    blib_warn "installed atuin has no 'daemon' subcommand — daemon mode will stay off (upgrade atuin to use it)"
+  fi
   if ! command -v mise >/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
     blib_say "mise (official installer — musl build)"
     curl -fsSL https://mise.run | sh >/dev/null 2>&1 || true
