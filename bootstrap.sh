@@ -178,10 +178,17 @@ provision() {
   # installer-provisioned atuin would be invisible to a Core shell: no HAVE_ATUIN, no cached
   # init, no Ctrl+E, and the daemon exports in os/alpine.zsh inert. Link it where Core looks.
   # (Same fix as dotfiles-Fedora#80, where the installer path is the NORM rather than a fallback.)
+  # Best-effort like every installer fallback around it: this script runs under
+  # `set -euo pipefail`, and a convenience symlink must not abort a bootstrap because
+  # ~/.local/bin is read-only, HOME is mounted oddly, or something already occupies the
+  # target. Warn instead — the failure is recoverable by hand and the warning says how.
   if [[ -x "$HOME/.atuin/bin/atuin" ]] && ! command -v atuin >/dev/null 2>&1; then
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$HOME/.atuin/bin/atuin" "$HOME/.local/bin/atuin"
-    blib_ok "linked ~/.atuin/bin/atuin -> ~/.local/bin/atuin (so 00-tools.zsh can see it)"
+    if mkdir -p "$HOME/.local/bin" 2>/dev/null &&
+      ln -sf "$HOME/.atuin/bin/atuin" "$HOME/.local/bin/atuin" 2>/dev/null; then
+      blib_ok "linked ~/.atuin/bin/atuin -> ~/.local/bin/atuin (so 00-tools.zsh can see it)"
+    else
+      blib_warn "could not link ~/.atuin/bin/atuin into ~/.local/bin — atuin stays invisible to Core's tool detection; add ~/.atuin/bin to PATH by hand"
+    fi
   fi
   # atuin daemon (dotfiles-core#335): there is nothing to INSTALL here — OpenRC has no
   # per-user supervision, so os/alpine.zsh sets ATUIN_DAEMON__AUTOSTART and the atuin client
