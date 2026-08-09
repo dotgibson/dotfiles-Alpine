@@ -235,8 +235,14 @@ provision() {
   # `testing`-only (NOT in `community` on current stable), so `apk add` skips them —
   # `go install` here is their REAL source, not a fallback. `go install` yields a
   # static (musl-safe) binary; presence-guarded + best-effort, so it no-ops when a
-  # tool is already present, and a box without Go just gets a hint. ────────────────
-  blib_say "duf / glow / sesh (go install — testing-only/unpackaged on Alpine; musl-safe static)"
+  # tool is already present, and a box without Go just gets a hint. The banner is
+  # guarded the same way (those guards live INSIDE the helper, so announcing the step
+  # unconditionally would claim work on a box where all three are already installed).
+  if ! command -v duf >/dev/null 2>&1 ||
+    ! command -v glow >/dev/null 2>&1 ||
+    ! command -v sesh >/dev/null 2>&1; then
+    blib_say "duf / glow / sesh (go install — testing-only/unpackaged on Alpine; musl-safe static)"
+  fi
   _dotfiles_go_install github.com/muesli/duf@latest duf
   _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
