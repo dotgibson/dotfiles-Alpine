@@ -211,11 +211,16 @@ provision() {
   # `yazi` binary the guard above tests for — so the guard stayed false forever and every
   # bootstrap rebuilt the whole yazi workspace (a hundred-plus crates) only to discard it.
   # `yazi-fm` is not the fix either: yazi-cli's build.rs panics on purpose telling you to use
-  # `cargo install --force yazi-build`. --force is upstream's own instruction and is harmless
-  # here because the guard already skips the block once `yazi` exists. On musl that rebuild is
-  # many minutes, and under `>/dev/null 2>&1` it was indistinguishable from a hang — so let
-  # the build talk. (Matches dotfiles-Fedora/bootstrap.sh, which documents this at length.)
-  if ! command -v yazi >/dev/null && command -v cargo >/dev/null; then
+  # `cargo install --force yazi-build`. --force is upstream's own instruction. On musl that
+  # rebuild is many minutes, and under `>/dev/null 2>&1` it was indistinguishable from a hang
+  # — so let the build talk. (Matches dotfiles-Fedora/bootstrap.sh, documented there at length.)
+  #
+  # The guard checks ~/.cargo/bin/yazi as well as PATH, and that second test is what makes
+  # --force safe: `provision` runs BEFORE `wire_links`, so ~/.cargo/bin is not on this shell's
+  # PATH yet (the zsh layer is what prefixes it). On PATH alone, a box that already built yazi
+  # here would fail `command -v` and --force would rebuild it from source on EVERY bootstrap.
+  # Same two-part guard dotfiles-Kali already uses.
+  if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
     blib_say "yazi (cargo build from source — slow on musl, output below)"
     cargo install --force --locked yazi-build || true
   fi
