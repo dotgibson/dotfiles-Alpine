@@ -205,9 +205,19 @@ provision() {
   # yazi + tree-sitter-cli: apk installs the community musl build first (packages.txt);
   # this cargo build is the fallback if apk missed it. On musl it compiles against the
   # musl target (needs build-base, in packages.txt).
+  #
+  # `yazi-build` is the ONLY crate that installs yazi from crates.io. This block previously
+  # asked for `yazi-fs`, which is a library crate (no [[bin]]) and can never produce the
+  # `yazi` binary the guard above tests for — so the guard stayed false forever and every
+  # bootstrap rebuilt the whole yazi workspace (a hundred-plus crates) only to discard it.
+  # `yazi-fm` is not the fix either: yazi-cli's build.rs panics on purpose telling you to use
+  # `cargo install --force yazi-build`. --force is upstream's own instruction and is harmless
+  # here because the guard already skips the block once `yazi` exists. On musl that rebuild is
+  # many minutes, and under `>/dev/null 2>&1` it was indistinguishable from a hang — so let
+  # the build talk. (Matches dotfiles-Fedora/bootstrap.sh, which documents this at length.)
   if ! command -v yazi >/dev/null && command -v cargo >/dev/null; then
-    blib_say "yazi (cargo build — slow on musl)"
-    cargo install --locked yazi-fs yazi-cli >/dev/null 2>&1 || true
+    blib_say "yazi (cargo build from source — slow on musl, output below)"
+    cargo install --force --locked yazi-build || true
   fi
   if ! command -v tree-sitter >/dev/null && command -v cargo >/dev/null; then
     blib_say "tree-sitter-cli (cargo build)"
