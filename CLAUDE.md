@@ -23,5 +23,7 @@ What belongs **here** is only the OS-native layer: the `apk` package list, clipb
 - `os/alpine.zsh` — clipboard + package-manager aliases for Alpine
 - `os/alpine.conf`, `os/alpine.gitconfig` — tmux + git OS overlays
 - `install/packages.txt` — Alpine package names
+- `zsh/zshenv` — `~/.zshenv` shim exporting `ZDOTDIR`; silences Alpine's
+  `/etc/zsh/zshrc` XDG warning. Alpine-only — don't port it blindly
 - `bootstrap.sh` — symlinks Core + OS files into place
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
