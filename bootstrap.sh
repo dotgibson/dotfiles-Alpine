@@ -299,6 +299,13 @@ wire_links() {
   blib_link_os_layer "$DOTFILES" "$CONFIG" alpine
   # shellcheck disable=SC2119  # no args is intentional — writes the default module set
   blib_write_zshrc_loader
+  # ~/.zshenv (Alpine-only): sets ZDOTDIR so /etc/zsh/zshrc's XDG nudge stops warning
+  # about "startup files both in ~/ and ~/.config/zsh/" — a false positive, since Core
+  # seeds the latter as a symlink to the former. See zsh/zshenv for the full rationale.
+  # AFTER blib_write_zshrc_loader: that writes ~/.zshrc, which this file's ZDOTDIR
+  # then points at.
+  blib_say "symlinking zsh/zshenv (Alpine ZDOTDIR shim)"
+  blib_link "$DOTFILES/zsh/zshenv" "$HOME/.zshenv"
   blib_set_login_shell
   blib_ok "symlinks wired$(blib_selected_note)"
 }
