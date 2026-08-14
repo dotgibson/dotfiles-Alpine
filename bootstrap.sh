@@ -9,8 +9,12 @@
 # Usage:
 #   ./bootstrap.sh                 # full: apk packages + extras + symlinks
 #   ./bootstrap.sh --links-only    # just (re)create symlinks
+#   ./bootstrap.sh --dry-run       # preview the wiring; change nothing
 #   ./bootstrap.sh --only zsh,nvim # link ONLY these Core module groups
 #   ./bootstrap.sh --skip tmux     # link everything EXCEPT these groups
+#
+# --dry-run implies --links-only: provisioning installs packages and touches system
+# files, which cannot be meaningfully previewed, so it is skipped rather than faked.
 #
 # Module groups (for --only/--skip): zsh nvim tmux git prompt tools — they affect
 # the wiring steps only, never package provisioning; combine with --links-only to
@@ -29,18 +33,38 @@ set -euo pipefail
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 LINKS_ONLY=0
+DRY=0
 # --only/--skip are validated by the shared lib (blib_select), which is sourced
 # AFTER this loop — so capture the raw values now and apply them below.
 ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 
+# ── pinned third-party material ────────────────────────────────────────────────
+# The 1Password apk signing key. Adding a third-party repo + key to apk means every
+# later `apk add` on this box trusts whatever that key signs, so fetching it without
+# verification is the widest supply-chain hole this script could open. Pin the digest
+# and fail CLOSED (skip op) on a mismatch. The key ID is part of the filename, so a
+# genuine upstream rotation changes the URL — not this digest silently.
+OP_APK_KEY_URL="https://downloads.1password.com/linux/keys/alpinelinux/support@1password.com-61ddfc31.rsa.pub"
+# The trailing gitleaks:allow is deliberate: this is the SHA-256 of a PUBLIC signing
+# key, published by 1Password at the URL above. It is a checksum to compare against,
+# not a credential — worthless to an attacker, and it must be committed for the check
+# to mean anything. gitleaks' generic-api-key rule cannot tell a pinned digest from a
+# token, so annotate this one line rather than weaken the rule for the whole repo.
+OP_APK_KEY_SHA256="0e88171d9f8b7630763f70cbf69f2a01b4ba8ea1d8e79487f59c162db255eb84" # gitleaks:allow
+
 while [[ $# -gt 0 ]]; do case "$1" in
   --links-only) LINKS_ONLY=1 ;;
+  --dry-run | -n) DRY=1; LINKS_ONLY=1 ;;
   --only) [[ $# -ge 2 ]] || { echo "--only requires module names, e.g. --only zsh,nvim" >&2; exit 1; }; ONLY_RAW="$2"; ONLY_SEEN=1; shift ;;
   --only=*) ONLY_RAW="${1#*=}"; ONLY_SEEN=1 ;;
   --skip) [[ $# -ge 2 ]] || { echo "--skip requires module names, e.g. --skip tmux" >&2; exit 1; }; SKIP_RAW="$2"; SKIP_SEEN=1; shift ;;
   --skip=*) SKIP_RAW="${1#*=}"; SKIP_SEEN=1 ;;
   -h | --help)
-    sed -n '2,19p' "$0"
+    # Print the whole header block, not a hardcoded line range: the previous
+    # `sed -n '2,19p'` stopped before the PREREQUISITE paragraph, hiding the one
+    # thing a first-time Alpine user must do (`apk add bash`) because a fresh box
+    # has only busybox ash. Walking to the first non-comment line can't drift again.
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); if ($0 !~ /^─+$/) print; next } NR > 1 { exit }' "$0"
     exit 0
     ;;
   *)
@@ -85,11 +109,20 @@ elif command -v doas >/dev/null 2>&1; then
   SU="doas"
 elif command -v sudo >/dev/null 2>&1; then
   SU="sudo"
+elif ((DRY)); then
+  # A preview changes nothing, so it must not demand the privilege it never uses.
+  SU=""
+  echo "note: no doas/sudo found — fine for --dry-run, required for a real run." >&2
 else
   echo "Need root: run as root, or 'apk add doas' and configure /etc/doas.d." >&2
   exit 1
 fi
 export BLIB_SU="$SU"
+
+# Hand the preview flag to the shared lib: blib_link / blib_seed / blib_link_core and
+# the loader writer all honour BLIB_DRY by planning instead of mutating, and
+# blib_wire_summary prefixes its tally with "(dry run)".
+if ((DRY)); then export BLIB_DRY=1; fi
 
 # ── sanity: confirm we're on Alpine ────────────────────────────────────────────
 if ! grep -qiE '^ID=alpine' /etc/os-release 2>/dev/null; then
@@ -123,7 +156,7 @@ apk_install() {
 _dotfiles_go_install() { # <import-path@version> <binary-name>
   [ "$#" -ge 2 ] || return 0
   if command -v "$2" >/dev/null 2>&1; then return 0; fi
-  gobin="$HOME/.local/bin"
+  local gobin="$HOME/.local/bin"
   mkdir -p "$gobin" 2>/dev/null || true
   if command -v go >/dev/null 2>&1; then
     GOBIN="$gobin" go install "$1" >/dev/null 2>&1 ||
@@ -138,6 +171,34 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
   fi
   return 0
+}
+
+# ── fetch a file only if it matches a pinned SHA-256 ───────────────────────────
+# Downloads to a temp path, verifies, and only then installs to <dest>. Returns
+# non-zero WITHOUT writing anything on any failure (fetch, checksum, or install), so
+# callers can — and must — fail closed. Mirrors the SHA-256 discipline Core already
+# applies to every downloaded release asset (scripts/tool-versions.env +
+# .github/actions/setup-core-tools); this script's third-party fetches predate it.
+_fetch_verified() { # <url> <sha256> <dest>
+  local url="$1" want="$2" dest="$3" tmp got
+  tmp="$(mktemp)" || return 1
+  # curl first, wget (busybox) as the fallback — a minimal Alpine may have only one.
+  if ! curl -fsSL "$url" -o "$tmp" 2>/dev/null && ! wget -qO "$tmp" "$url" 2>/dev/null; then
+    echo "   fetch failed: $url" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  got="$(sha256sum <"$tmp" | cut -d' ' -f1)"
+  if [[ "$got" != "$want" ]]; then
+    echo "   SHA-256 MISMATCH — refusing to install $url" >&2
+    echo "     expected: $want" >&2
+    echo "     got:      $got" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  # shellcheck disable=SC2086  # $SU: single token (doas/sudo) or empty (root)
+  $SU install -m 0644 "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
 }
 
 provision() {
@@ -294,27 +355,86 @@ provision() {
   # ── op (1Password CLI): native musl apk from 1Password's official Alpine repo —
   # NOT a glibc vendor binary. Presence-guarded; best-effort so a fetch/network hiccup
   # never aborts bootstrap. ────────────────────────────────────────────────────────
+  # ORDER MATTERS: verify and install the signing key FIRST, and only add the
+  # repository once it is trusted. The reverse order — the old one — left a window
+  # where /etc/apk/repositories named a third-party repo whose key had silently
+  # failed to download (the fetch was `|| true`), and it never removed the repo line.
   if ! command -v op >/dev/null 2>&1; then
     blib_say "op — 1Password CLI (official Alpine repo — native musl apk)"
-    # shellcheck disable=SC2086  # $SU: single token (doas/sudo) or empty (root)
-    if ! grep -q '1password.com/linux/alpinelinux' /etc/apk/repositories 2>/dev/null; then
-      echo "https://downloads.1password.com/linux/alpinelinux/stable/" | $SU tee -a /etc/apk/repositories >/dev/null || true
+    local op_key_dest="/etc/apk/keys/${OP_APK_KEY_URL##*/}"
+    local have_key=0
+    # An ALREADY-PRESENT key is re-verified, not assumed good: every box bootstrapped
+    # by the previous version of this script installed this key without ever checking
+    # it, so "the file exists" says nothing about what it contains.
+    if [[ -f "$op_key_dest" ]]; then
+      if [[ "$(sha256sum <"$op_key_dest" | cut -d' ' -f1)" == "$OP_APK_KEY_SHA256" ]]; then
+        have_key=1
+      else
+        # QUARANTINE BEFORE RE-FETCHING, not after. Overwriting on success alone left
+        # a hole: if the key on disk is wrong AND the re-fetch then fails (no network,
+        # no downloader), the unverified key stays in /etc/apk/keys — and on a box
+        # bootstrapped by the old script the repo line is ALREADY present, so apk goes
+        # on trusting it. "Failed closed" has to mean the bad key is gone, not merely
+        # that we declined to add a new one. Moved OUT of the keys directory (apk
+        # matches keys by filename, but leaving it in there invites a manual restore)
+        # and kept for forensics rather than deleted.
+        # shellcheck disable=SC2086  # $SU: single token or empty (root)
+        $SU mv "$op_key_dest" "/etc/apk/${OP_APK_KEY_URL##*/}.untrusted.$(date +%s)" || true
+        blib_warn "op: existing signing key did NOT match the pinned digest — quarantined out of /etc/apk/keys"
+      fi
     fi
-    # shellcheck disable=SC2086
-    $SU wget -q https://downloads.1password.com/linux/keys/alpinelinux/support@1password.com-61ddfc31.rsa.pub -P /etc/apk/keys 2>/dev/null || true
-    # shellcheck disable=SC2086
-    { $SU apk update >/dev/null 2>&1 && $SU apk add 1password-cli >/dev/null 2>&1; } ||
-      echo "   op: install skipped — add it later with: $SU apk add 1password-cli"
+    if ((have_key == 0)) &&
+      _fetch_verified "$OP_APK_KEY_URL" "$OP_APK_KEY_SHA256" "$op_key_dest"; then
+      have_key=1
+    fi
+    if ((have_key)); then
+      if ! grep -q '1password.com/linux/alpinelinux' /etc/apk/repositories 2>/dev/null; then
+        # Back up before the first append: the grep above keeps this idempotent, but
+        # idempotent is not recoverable — /etc/apk/repositories is the file that
+        # decides what this box will install.
+        if [[ -f /etc/apk/repositories ]]; then
+          # shellcheck disable=SC2086  # $SU: single token or empty (root)
+          $SU cp -p /etc/apk/repositories "/etc/apk/repositories.pre-dotfiles.$(date +%s)" || true
+        fi
+        # shellcheck disable=SC2086
+        echo "https://downloads.1password.com/linux/alpinelinux/stable/" | $SU tee -a /etc/apk/repositories >/dev/null || true
+      fi
+      # shellcheck disable=SC2086
+      { $SU apk update >/dev/null 2>&1 && $SU apk add 1password-cli >/dev/null 2>&1; } ||
+        echo "   op: install skipped — add it later with: ${SU:+$SU }apk add 1password-cli"
+    else
+      # Fail closed. An unverified key would be trusted for EVERY later `apk add` on
+      # this box, so a bad or substituted download must cost us `op`, not the
+      # integrity of the package manager.
+      blib_warn "op: signing key failed verification — repo NOT added, op NOT installed"
+    fi
   fi
 
   # ── WSL: install /etc/wsl.conf. NOTE: no systemd=true — Alpine uses OpenRC. ───
   if ((IS_WSL)); then
     blib_say "installing /etc/wsl.conf (default user + interop; OpenRC, not systemd)"
-    local user
+    local user rendered backup
     user="$(id -un)"
-    # shellcheck disable=SC2086  # $SU: single token or empty (root)
-    sed "s/__WSL_USER__/$user/" "$DOTFILES/wsl/wsl.conf" | $SU tee /etc/wsl.conf >/dev/null
-    blib_ok "wsl.conf written — run 'wsl.exe --shutdown' from Windows, then reopen"
+    rendered="$(sed "s/__WSL_USER__/$user/" "$DOTFILES/wsl/wsl.conf")"
+    if [[ -f /etc/wsl.conf ]] && printf '%s\n' "$rendered" | cmp -s - /etc/wsl.conf; then
+      blib_ok "/etc/wsl.conf already current — left alone"
+    else
+      # This was the ONE unbacked-up destructive write in the stack: every other
+      # writer here backs up first (blib_link moves real files aside as
+      # .pre-dotfiles.<epoch>, blib_write_zshrc_loader cp's before rewriting). A
+      # hand-tuned /etc/wsl.conf — custom [automount] options, mounts, memory
+      # limits — was destroyed silently on every re-run. Same convention, so
+      # .gitignore's *.pre-dotfiles.* already covers it.
+      if [[ -e /etc/wsl.conf ]]; then
+        backup="/etc/wsl.conf.pre-dotfiles.$(date +%s)"
+        # shellcheck disable=SC2086  # $SU: single token or empty (root)
+        $SU cp -p /etc/wsl.conf "$backup"
+        blib_warn "existing /etc/wsl.conf backed up -> $backup"
+      fi
+      # shellcheck disable=SC2086
+      printf '%s\n' "$rendered" | $SU tee /etc/wsl.conf >/dev/null
+      blib_ok "wsl.conf written — run 'wsl.exe --shutdown' from Windows, then reopen"
+    fi
   fi
 }
 
@@ -327,15 +447,35 @@ wire_links() {
   blib_write_zshrc_loader
   # ~/.zshenv (Alpine-only): sets ZDOTDIR so /etc/zsh/zshrc's XDG nudge stops warning
   # about "startup files both in ~/ and ~/.config/zsh/" — a false positive, since Core
-  # seeds the latter as a symlink to the former. See zsh/zshenv for the full rationale.
+  # seeds the latter as a symlink to the former. See zsh/zshenv.zsh for the rationale.
   # AFTER blib_write_zshrc_loader: that writes ~/.zshrc, which this file's ZDOTDIR
   # then points at.
-  blib_say "symlinking zsh/zshenv (Alpine ZDOTDIR shim)"
-  blib_link "$DOTFILES/zsh/zshenv" "$HOME/.zshenv"
+  blib_say "symlinking zsh/zshenv.zsh (Alpine ZDOTDIR shim)"
+  blib_link "$DOTFILES/zsh/zshenv.zsh" "$HOME/.zshenv"
   blib_set_login_shell
-  blib_ok "symlinks wired$(blib_selected_note)"
+  # Local guardrail against hand-editing the vendored subtree. The hook lives in
+  # .git/hooks, which is not version-controlled — so a fresh clone has NO protection
+  # until something installs it. sync-core.sh reinstalls it on every fan-out, but
+  # that only ever runs on the maintainer's machine; a bootstrap is the other place
+  # a clone becomes a working repo. CI's core-integrity check is the backstop, not
+  # the first line. Skipped under --dry-run: it writes a file.
+  if ((DRY)); then
+    blib_say "(dry run) would install the core/ pre-commit guard"
+  else
+    blib_install_core_guard "$DOTFILES"
+  fi
+  if ((DRY)); then
+    blib_ok "dry run complete — nothing was changed$(blib_selected_note)"
+  else
+    blib_ok "symlinks wired$(blib_selected_note)"
+  fi
+  blib_wire_summary
 }
 
 ((LINKS_ONLY)) || provision
 wire_links
-blib_ok "Alpine bootstrap complete — open a new shell or: exec zsh"
+if ((DRY)); then
+  blib_ok "dry run finished — re-run without --dry-run to apply"
+else
+  blib_ok "Alpine bootstrap complete — open a new shell or: exec zsh"
+fi

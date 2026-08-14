@@ -4,15 +4,15 @@
 # the deps bootstrap needs. See dotfiles-core/.github/workflows/bootstrap-test.yml.
 name: bootstrap
 
+# NO PATH FILTERS — see the same note in lint.yml. This is a REQUIRED status check on
+# main, and a path-filtered workflow simply does not report on a PR that misses the
+# filter, leaving the required check pending forever. The old filters were also
+# asymmetric (the pull_request list included this workflow file; the push list did
+# not), which is exactly the kind of drift that disappears when the filters do.
 on:
-  # install/packages.txt is consumed directly by bootstrap.sh — a bad entry there
-  # breaks provisioning exactly like a bad line in the script, so it must trigger
-  # this test too (apk fails the whole transaction on one unknown name).
   pull_request:
-    paths: ['bootstrap.sh', 'install/packages.txt', 'core/lib/**', '.github/workflows/bootstrap.yml']
   push:
     branches: [main]
-    paths: ['bootstrap.sh', 'install/packages.txt', 'core/lib/**']
   workflow_dispatch:
 
 permissions:

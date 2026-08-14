@@ -120,8 +120,12 @@ exec zsh
 `core/` is a vendored subtree and is **already present** in a clone — there is no
 submodule step. Run as **root**, or as a user with **doas** (or sudo) configured
 — `bootstrap.sh` detects which to use, then provisions `apk` packages and
-symlinks Core + the Alpine layer into place. Flag: `--links-only` (re-link
-without touching `apk`).
+symlinks Core + the Alpine layer into place.
+
+Flags: `--dry-run` (preview every link, change nothing), `--links-only` (re-link
+without touching `apk`), `--only` / `--skip` (limit to some Core module groups).
+Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
+anything is linked over them — nothing is overwritten in place.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -158,7 +162,15 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    Don't fight the musl grain — prefer `apk` / musl builds over prebuilt binaries.
 3. **Green the lint gate.** This repo's CI runs shellcheck + `bash -n` / `zsh -n`
    on the repo-owned shell (the vendored `core/` is excluded — it is gated
-   upstream).
+   upstream). Run the same checks locally before you push:
+
+   ```sh
+   make check          # shellcheck · bash -n · zsh -n · markdownlint · gitleaks
+   make hooks          # optional: run them automatically on every commit
+   ```
+
+   `make check` is a mirror of CI, not a second opinion: same tools, same flags,
+   same excludes. A tool you don't have installed SKIPs rather than fails.
 
 Bugs and ideas: open an
 [issue](https://github.com/dotgibson/dotfiles-Alpine/issues).
