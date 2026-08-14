@@ -113,7 +113,24 @@ fi
 unset _ASU _IS_WSL
 
 # ── auto-start/attach tmux for interactive terminals ─────────────────────────
+# DEFERRED TO THE FIRST PROMPT, deliberately — do not "simplify" this back to an
+# inline `tmux attach`. This fragment is the OS band (80-), and the loader still has
+# the role band (85-<role>.zsh) and the host-local band (99-local.zsh) to source
+# after it. Attaching inline blocked the loader mid-run: on an interactive TTY those
+# later fragments did not load until you EXITED tmux, so a role alias or a
+# 99-local.zsh override was silently missing inside every tmux session — the one
+# place you actually work. A one-shot precmd hook fires after the whole rc is
+# sourced, so the full load order completes first.
 if command -v tmux >/dev/null 2>&1 \
-   && [[ -z "$TMUX" && -t 1 && "$TERM_PROGRAM" != "vscode" ]]; then
-  tmux attach -t main 2>/dev/null || tmux new-session -s main
+   && [[ -z "$TMUX" && -t 1 && "${TERM_PROGRAM:-}" != "vscode" ]]; then
+  autoload -Uz add-zsh-hook
+  _alpine_tmux_autostart() {
+    # Unhook BEFORE attaching: tmux is not exec'd, so control returns here when you
+    # detach — without this the hook would re-attach at the next prompt and you
+    # could never get back to a bare shell.
+    add-zsh-hook -d precmd _alpine_tmux_autostart
+    unfunction _alpine_tmux_autostart
+    tmux attach -t main 2>/dev/null || tmux new-session -s main
+  }
+  add-zsh-hook precmd _alpine_tmux_autostart
 fi
