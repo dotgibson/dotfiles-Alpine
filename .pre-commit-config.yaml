@@ -1,0 +1,65 @@
+# .pre-commit-config.yaml — author-time guardrails for dotfiles-Alpine.
+#
+# Mirrors this repo's CI gate (.github/workflows/lint.yml → dotfiles-core's
+# lint-call.yml) so a break is caught before it is committed, not after it is pushed.
+# Deliberately a SUBSET of core/.pre-commit-config.yaml:
+#
+#   * every hook excludes ^core/ — that tree is a vendored subtree, gated by its own
+#     upstream CI, and edits to it are refused by the core-guard hook anyway.
+#   * no audit-core hook: scripts/audit-core.sh is Core's contract check, not this
+#     layer's, and it is already enforced upstream before anything is vendored here.
+#
+#   one-time:  pip install pre-commit && make hooks
+#   manual:    pre-commit run --all-files
+#
+# Revs are pinned to the same versions core/.pre-commit-config.yaml uses; keep them in
+# step when Core moves, so the fleet lints identically.
+
+exclude: '^core/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '(^core/|\.md$)'
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: check-executables-have-shebangs
+      # The bug the fleet's exec-bit discipline started from: a file with a shebang
+      # that is not executable. bootstrap.sh is the only executable here and it must
+      # stay one — a non-executable bootstrap is a broken install for every new box.
+      - id: check-shebang-scripts-are-executable
+
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+      - id: shellcheck
+        args: ["-x"]
+        files: '\.sh$'
+        exclude: '^core/'
+
+  # The README is this layer's public landing page and the one file class that
+  # shellcheck and `zsh -n` never inspect. .markdownlint.jsonc shipped here from the
+  # start but nothing ever ran it — the lint workflow skipped **.md entirely — so it
+  # was decoration. This is where it becomes real; `make md` runs the same tool.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        exclude: '^core/'
+
+  # This repo is PUBLIC and tracks ssh/config. GitHub's push protection catches
+  # provider-shaped tokens, but non-provider patterns are off by default — a private
+  # key pasted into ssh/config would sail straight through. gitleaks reads the actual
+  # diff, at author time, before the push exists.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+# NB: zsh -n is NOT a pre-commit hook — pre-commit has no zsh syntax stage, and
+# shellcheck has no zsh mode. `make zsh` and the CI gate cover *.zsh instead. That
+# now includes zsh/zshenv.zsh, which was invisible to both until it was renamed.

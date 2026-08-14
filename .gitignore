@@ -3,7 +3,8 @@
 *.bak
 *.pre-dotfiles.*
 .DS_Store
-zsh/local.zsh
+# host-local zsh fragment (v4 name; blib_migrate_v4 renamed the pre-v4 zsh/local.zsh)
+zsh/99-local.zsh
 .env
 .env.*
 !.env.example
