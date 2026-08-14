@@ -1,0 +1,7 @@
+# CODEOWNERS — a single catch-all owner is deliberate: this is a personal-but-public
+# showcase system with one author. Mirrors dotfiles-core's convention.
+#
+# NB: the branch ruleset does NOT require code-owner review. With a sole maintainer
+# that would be unsatisfiable — you cannot approve your own PR — so this file is
+# informational (review routing, GitHub UI attribution), not a merge gate.
+* @gerrrt
