@@ -224,7 +224,7 @@ provision() {
     blib_say "yazi (cargo build from source — slow on musl, output below)"
     cargo install --force --locked yazi-build || true
   fi
-  if ! command -v tree-sitter >/dev/null && command -v cargo >/dev/null; then
+  if ! command -v tree-sitter >/dev/null && [[ ! -x "$HOME/.cargo/bin/tree-sitter" ]] && command -v cargo >/dev/null; then
     blib_say "tree-sitter-cli (cargo build)"
     cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
       echo "   tree-sitter-cli build failed; retry later: cargo install --locked tree-sitter-cli"
@@ -232,7 +232,7 @@ provision() {
   # tealdeer (tldr): `testing`-only on Alpine (never in `community`), so not in
   # packages.txt — build from source via cargo. Presence-guarded on the `tldr`
   # binary; best-effort so a build hiccup never aborts bootstrap.
-  if ! command -v tldr >/dev/null && command -v cargo >/dev/null; then
+  if ! command -v tldr >/dev/null && [[ ! -x "$HOME/.cargo/bin/tldr" ]] && command -v cargo >/dev/null; then
     blib_say "tealdeer (cargo build — tldr client; testing-only on Alpine)"
     cargo install --locked tealdeer >/dev/null 2>&1 ||
       echo "   tealdeer build failed; retry later: cargo install --locked tealdeer"
@@ -240,7 +240,7 @@ provision() {
   # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) now ships
   # in `community` (packages.txt) — apk installs it first; this cargo build is the
   # fallback. On musl it compiles the musl target (static, musl-safe), presence-guarded.
-  if ! command -v viddy >/dev/null && command -v cargo >/dev/null; then
+  if ! command -v viddy >/dev/null && [[ ! -x "$HOME/.cargo/bin/viddy" ]] && command -v cargo >/dev/null; then
     blib_say "viddy (cargo build — watch replacement; Rust)"
     cargo install --locked viddy >/dev/null 2>&1 ||
       echo "   viddy build failed; retry later: cargo install --locked viddy"
