@@ -3,8 +3,8 @@
 # Most modern tools live in the `community` repo — make sure it's enabled in
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
 # A few tools are NOT listed here and are built from source in bootstrap.sh instead:
-# tealdeer (testing-only) and sesh (go install). duf/glow are testing-only too but
-# stay in the list as a best-effort (apk skips them; bootstrap go-installs them).
+# tealdeer (testing-only, cargo) plus duf, glow and sesh (go install) — all four are
+# testing-only or unpackaged on Alpine, so listing them would only break bulk install.
 # starship, yazi, tree-sitter-cli and viddy recently landed in `community` and are
 # apk-installed below, with bootstrap keeping a presence-guarded source build as a fallback.
 
@@ -44,10 +44,14 @@ viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarde
 # ── modern CLI extras (core-doctor parity; community repo) ─────
 # Most of core-doctor's modern-CLI set is in `community` on current stable. The
 # exceptions are duf + glow: still `testing`-only (NOT in `community` on stable),
-# so `apk add` skips them here — bootstrap.sh installs them from source via a
-# `command -v`-guarded `go install` (static, musl-safe), which is their REAL
-# source, not a mere fallback. They're kept in this list only as a best-effort in
-# case a future stable promotes them to `community`.
+# so they are deliberately NOT listed here — bootstrap.sh installs them from source
+# via a `command -v`-guarded `go install` (static, musl-safe), which is their REAL
+# source, not a mere fallback.
+# Do NOT add them back "as a best-effort": apk fails the whole transaction on one
+# unknown name, so a permanently-unresolvable entry makes the bulk `apk add` in
+# apk_install() fail EVERY run, forcing the per-package retry loop for all ~50
+# packages. The fallback is for names that might be missing on some boxes, not for
+# ones known to be absent on all of them.
 # apk_install() (bootstrap.sh) is resilient — a name missing on this box (e.g. `sd`
 # if it hasn't landed) is skipped per-package, never fatal.
 dust           # du (dust)
@@ -55,8 +59,6 @@ procs          # ps
 gron           # greppable JSON
 gum            # shell-script UI toolkit (charm)
 xh             # HTTPie-style HTTP client
-duf            # df / disk usage (testing-only on stable → go install in bootstrap)
-glow           # markdown renderer (testing-only on stable → go install in bootstrap)
 doggo          # dig / DNS client (in community — no go install needed)
 carapace       # multi-shell completion engine (in community — no go install needed)
 sd             # sed-style find & replace (in community)

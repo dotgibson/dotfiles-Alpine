@@ -5,11 +5,14 @@
 name: bootstrap
 
 on:
+  # install/packages.txt is consumed directly by bootstrap.sh — a bad entry there
+  # breaks provisioning exactly like a bad line in the script, so it must trigger
+  # this test too (apk fails the whole transaction on one unknown name).
   pull_request:
-    paths: ['bootstrap.sh', 'core/lib/**', '.github/workflows/bootstrap.yml']
+    paths: ['bootstrap.sh', 'install/packages.txt', 'core/lib/**', '.github/workflows/bootstrap.yml']
   push:
     branches: [main]
-    paths: ['bootstrap.sh', 'core/lib/**']
+    paths: ['bootstrap.sh', 'install/packages.txt', 'core/lib/**']
   workflow_dispatch:
 
 permissions:
