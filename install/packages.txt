@@ -108,4 +108,8 @@ gawk
 direnv
 iproute2       # full `ip` — busybox's `ip` applet lacks `-brief`, which the `localip`
                # alias (os/alpine.zsh) uses; without this it errors on a lean Alpine
+ncurses        # `tput` — busybox has NO tput applet and only ncurses-terminfo-base comes
+               # in as a dependency, so a lean Alpine has no tput at all. zsh-you-should-use
+               # warns and drops to uncoloured output without it; sole provider per the
+               # Alpine contents index.
 # NOTE: no flatpak here — it isn't idiomatic on Alpine (the lean/container distro).
