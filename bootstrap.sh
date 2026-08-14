@@ -248,6 +248,32 @@ provision() {
     cargo install --locked viddy >/dev/null 2>&1 ||
       echo "   viddy build failed; retry later: cargo install --locked viddy"
   fi
+  # jnv (interactive jq filter): not packaged by Alpine in main, community OR edge, so
+  # cargo is its only source here. Plain build — no special flags needed.
+  if ! command -v jnv >/dev/null && [[ ! -x "$HOME/.cargo/bin/jnv" ]] && command -v cargo >/dev/null; then
+    blib_say "jnv (cargo build — interactive jq filter; unpackaged on Alpine)"
+    cargo install --locked jnv >/dev/null 2>&1 ||
+      echo "   jnv build failed; retry later: cargo install --locked jnv"
+  fi
+  # ouch (archive (de)compressor): also unpackaged on Alpine — cargo only.
+  #
+  # DO NOT "simplify" this to a plain `cargo install --locked ouch`: it FAILS on musl.
+  # ouch's DEFAULT features include bzip3, whose libbzip3-sys build script runs bindgen,
+  # and bindgen dlopen()s libclang. Rust's musl toolchain builds static binaries, where
+  # dlopen is unavailable — so the build dies with "Unable to find libclang: ... Dynamic
+  # loading not supported" even though libclang IS installed. Installing clang does not
+  # help; the blocker is static linking, not a missing package.
+  #
+  # Dropping bzip3 avoids bindgen entirely and keeps a static (musl-safe) binary. The
+  # alternative — RUSTFLAGS="-C target-feature=-crt-static" — would restore dlopen but
+  # give up static linking for every crate in the build. Cost of this choice: no .bz3
+  # archives. tar/zip/gz/xz/zstd/bz2/7z all still work.
+  if ! command -v ouch >/dev/null && [[ ! -x "$HOME/.cargo/bin/ouch" ]] && command -v cargo >/dev/null; then
+    blib_say "ouch (cargo build — archive tool; bzip3 dropped, see comment)"
+    cargo install --locked ouch --no-default-features \
+      --features unrar,use_zlib,use_zstd_thin >/dev/null 2>&1 ||
+      echo "   ouch build failed; retry later: cargo install --locked ouch --no-default-features --features unrar,use_zlib,use_zstd_thin"
+  fi
 
   # ── go-installed core-doctor tools. sesh is unpackaged on Alpine; duf + glow are
   # `testing`-only (NOT in `community` on current stable), so `apk add` skips them —
