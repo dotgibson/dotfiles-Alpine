@@ -1,6 +1,13 @@
-# dotfiles-Alpine/zsh/zshenv → symlinked to ~/.zshenv by bootstrap.sh.
+# dotfiles-Alpine/zsh/zshenv.zsh → symlinked to ~/.zshenv by bootstrap.sh.
 # OS-NATIVE layer: this exists to satisfy an ALPINE-specific check. Do not port it
 # blindly to the other OS repos (see core/PORTING-MATRIX.md).
+#
+# THE .zsh EXTENSION IS LOAD-BEARING — do not "tidy" it away to match ~/.zshenv.
+# Core's reusable lint gate syntax-checks repo-owned zsh via `git ls-files '*.zsh'`
+# (core/.github/workflows/lint-call.yml). Named plain `zshenv`, this file matched
+# nothing and was the one file in the repo that CI never checked — while being the
+# file that runs on EVERY zsh invocation, where a syntax error breaks login shells
+# on every Alpine box. The symlink target is ~/.zshenv regardless of source name.
 #
 # WHY THIS FILE EXISTS
 # --------------------
