@@ -84,6 +84,11 @@ xclip          # X11 fallback
 # ── build toolchain (needed to compile yazi + tree-sitter-cli on musl) ────────
 build-base     # Alpine's gcc/g++/make/musl-dev meta (replaces Fedora's gcc/gcc-c++/make)
 cargo          # rust toolchain (pulls rust)
+go             # go toolchain — REQUIRED for the duf/glow/sesh `go install` fallbacks in
+               # bootstrap.sh. Without it those fail every run (with a one-line hint each):
+               # the mise fallback resolves `go@latest` to mise's go *backend* (a module
+               # installer), never installs a runtime, and dies with "couldn't exec
+               # process". `go` is in community.
 pkgconf        # some crates probe libs via pkg-config at build time
 openssl-dev    # ditto — common cargo build dependency
 
