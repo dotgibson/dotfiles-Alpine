@@ -60,6 +60,8 @@ gron           # greppable JSON
 gum            # shell-script UI toolkit (charm)
 xh             # HTTPie-style HTTP client
 doggo          # dig / DNS client (in community — no go install needed)
+gping          # ping with a graph (core-doctor `data / net` row)
+lnav           # log file navigator (core-doctor `data / net` row)
 carapace       # multi-shell completion engine (in community — no go install needed)
 sd             # sed-style find & replace (in community)
 yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
@@ -76,6 +78,19 @@ git            # `git subtree` ships with git on Alpine (no separate package)
 openssh-client-default # ssh / ssh-keygen / ssh-agent — bare `openssh-client` is now
                # only a virtual `provides`; the -default variant is the real package
 lazygit
+git-absorb     # auto-fixup commits into the right ancestor (core-doctor `dev / repo`)
+jujutsu        # `jj` — git-compatible VCS. PACKAGE IS `jujutsu`, BINARY IS `jj`: searching
+               # apk for `jj` finds nothing, which is exactly the rename trap core-doctor
+               # warns about ("the package is often called something else").
+
+# ── dev / repo tooling (core-doctor `dev / repo` row) ─────────
+# shellcheck + shfmt are the same tools the `lint / shell lint` CI job runs, so having
+# them locally means shell changes can be linted BEFORE pushing rather than after.
+shellcheck     # shell linter
+shfmt          # shell formatter
+hyperfine      # command-line benchmarking
+watchexec      # run a command on file change
+uv             # fast Python package/project manager (astral)
 
 # ── clipboard — OPTIONAL: pulls X/Wayland libs. On a headless/container Alpine
 # you can delete both (Core's `clip` just no-ops without a backend; on WSL it
