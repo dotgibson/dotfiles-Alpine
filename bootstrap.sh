@@ -45,7 +45,12 @@ ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
 # and fail CLOSED (skip op) on a mismatch. The key ID is part of the filename, so a
 # genuine upstream rotation changes the URL — not this digest silently.
 OP_APK_KEY_URL="https://downloads.1password.com/linux/keys/alpinelinux/support@1password.com-61ddfc31.rsa.pub"
-OP_APK_KEY_SHA256="0e88171d9f8b7630763f70cbf69f2a01b4ba8ea1d8e79487f59c162db255eb84"
+# The trailing gitleaks:allow is deliberate: this is the SHA-256 of a PUBLIC signing
+# key, published by 1Password at the URL above. It is a checksum to compare against,
+# not a credential — worthless to an attacker, and it must be committed for the check
+# to mean anything. gitleaks' generic-api-key rule cannot tell a pinned digest from a
+# token, so annotate this one line rather than weaken the rule for the whole repo.
+OP_APK_KEY_SHA256="0e88171d9f8b7630763f70cbf69f2a01b4ba8ea1d8e79487f59c162db255eb84" # gitleaks:allow
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --links-only) LINKS_ONLY=1 ;;
@@ -360,12 +365,26 @@ provision() {
     local have_key=0
     # An ALREADY-PRESENT key is re-verified, not assumed good: every box bootstrapped
     # by the previous version of this script installed this key without ever checking
-    # it, so "the file exists" says nothing about what it contains. On a mismatch the
-    # fetch below overwrites it, which is how those boxes get corrected on next run.
-    if [[ -f "$op_key_dest" ]] &&
-      [[ "$(sha256sum <"$op_key_dest" | cut -d' ' -f1)" == "$OP_APK_KEY_SHA256" ]]; then
-      have_key=1
-    elif _fetch_verified "$OP_APK_KEY_URL" "$OP_APK_KEY_SHA256" "$op_key_dest"; then
+    # it, so "the file exists" says nothing about what it contains.
+    if [[ -f "$op_key_dest" ]]; then
+      if [[ "$(sha256sum <"$op_key_dest" | cut -d' ' -f1)" == "$OP_APK_KEY_SHA256" ]]; then
+        have_key=1
+      else
+        # QUARANTINE BEFORE RE-FETCHING, not after. Overwriting on success alone left
+        # a hole: if the key on disk is wrong AND the re-fetch then fails (no network,
+        # no downloader), the unverified key stays in /etc/apk/keys — and on a box
+        # bootstrapped by the old script the repo line is ALREADY present, so apk goes
+        # on trusting it. "Failed closed" has to mean the bad key is gone, not merely
+        # that we declined to add a new one. Moved OUT of the keys directory (apk
+        # matches keys by filename, but leaving it in there invites a manual restore)
+        # and kept for forensics rather than deleted.
+        # shellcheck disable=SC2086  # $SU: single token or empty (root)
+        $SU mv "$op_key_dest" "/etc/apk/${OP_APK_KEY_URL##*/}.untrusted.$(date +%s)" || true
+        blib_warn "op: existing signing key did NOT match the pinned digest — quarantined out of /etc/apk/keys"
+      fi
+    fi
+    if ((have_key == 0)) &&
+      _fetch_verified "$OP_APK_KEY_URL" "$OP_APK_KEY_SHA256" "$op_key_dest"; then
       have_key=1
     fi
     if ((have_key)); then
