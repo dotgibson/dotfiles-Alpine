@@ -133,7 +133,7 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     # rather than a Go runtime, in which case nothing is installed and the exec fails.
     # `go` is in Alpine community and is listed in packages.txt — prefer that.
     GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
-      echo "   $2: no Go runtime (mise fallback failed) — install it: doas apk add go"
+      echo "   $2: no Go runtime (mise fallback failed) — install it: ${SU:+$SU }apk add go"
   else
     echo "   $2: needs Go — install later with: GOBIN=$gobin go install $1"
   fi
