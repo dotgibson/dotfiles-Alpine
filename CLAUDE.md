@@ -6,7 +6,7 @@ rules (the load order, the "is it Core?" test, the manifest contract) see
 
 ## What this repo is
 
-`dotfiles-Alpine` is the **OS-native layer for Alpine Linux** in a **ten-repo dotfiles system** built on a three-layer
+`dotfiles-Alpine` is the **OS-native layer for Alpine Linux** in a **eleven-repo dotfiles system** built on a three-layer
 model (Core → OS-native → Role). Stamped from the Fedora template (see `core/PORTING-MATRIX.md`). The outlier: **musl libc, not glibc** — glibc-linked prebuilt binaries will not run, so prefer `apk` packages or musl builds. Default shell is `ash`, privilege tool is `doas` (not sudo), and many commands are busybox applets. Keep this layer lean.
 
 ## The rule that bites
