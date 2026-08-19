@@ -283,7 +283,7 @@ provision() {
   # --force safe: `provision` runs BEFORE `wire_links`, so ~/.cargo/bin is not on this shell's
   # PATH yet (the zsh layer is what prefixes it). On PATH alone, a box that already built yazi
   # here would fail `command -v` and --force would rebuild it from source on EVERY bootstrap.
-  # Same two-part guard dotfiles-Kali already uses.
+  # Same two-part guard dotfiles-Offense already uses.
   if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
     blib_say "yazi (cargo build from source — slow on musl, output below)"
     cargo install --force --locked yazi-build || true
