@@ -4,7 +4,7 @@ name: lint
 # (.github/workflows/lint-call.yml) — one definition for the whole fleet, replacing the
 # ~200-line copy this file used to carry. The gate's internals (the SHA-256-verified
 # pinned-tool bootstrap, the core/ exclude, shfmt-advisory) live there now. This repo has no
-# extra excludes (only Kali does), so no `with:` is needed.
+# extra excludes (only Offense does), so no `with:` is needed.
 # NO PATH FILTERS — deliberately, and do not add them back. This gate is a REQUIRED
 # status check on main. A workflow that never triggers never reports a check-run, and
 # a required check with no result blocks the PR forever: a docs-only change would sit
