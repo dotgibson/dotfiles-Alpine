@@ -37,7 +37,9 @@ atuin          # shell history (in Alpine repos — no installer needed)
 # presence-guarded fallbacks that skip when apk already provided the binary. The
 # community tree-sitter-cli IS the musl build and clears nvim-treesitter's >=0.26.1 floor.
 starship       # prompt (musl build in community; official installer kept as fallback)
-yazi           # file manager (community; cargo build kept as fallback)
+yazi           # file manager (community; cargo build kept as fallback). In `community`
+               # only since v3.22 — NOT on v3.21 (supported to 2026-11-01), where this
+               # name is the one that aborts the bulk `apk add` (see the retry note below)
 tree-sitter-cli  # nvim parser CLI (see note above)
 viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarded)
 
@@ -56,7 +58,12 @@ viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarde
 # if it hasn't landed) is skipped per-package, never fatal.
 dust           # du (dust)
 procs          # ps
-gron           # greppable JSON
+gron           # greppable JSON. In `community` only since v3.23 — NOT on v3.21 or v3.22
+               # (supported to 2026-11-01 / 2027-05-01). Not a rename and not a drop: it
+               # was promoted from `testing` later, so leave the name alone. On those two
+               # branches gron (and yazi) fail the bulk `apk add`, and apk_install() falls
+               # back to the per-package loop for all ~60 names — noisy every run, never
+               # fatal (bootstrap.sh skips per package). Verified 2026-08-21.
 gum            # shell-script UI toolkit (charm)
 xh             # HTTPie-style HTTP client
 doggo          # dig / DNS client (in community — no go install needed)
