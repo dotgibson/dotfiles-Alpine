@@ -1,42 +1,34 @@
 # Security Policy
 
-`dotfiles-Alpine` ships **configuration plus one provisioning script**. The config is
-inert; `bootstrap.sh` is not — it runs with `doas`/`sudo`, installs packages, adds a
-third-party `apk` repository, and writes to `/etc/`. That makes a narrow but real
-security surface, and it is the part worth reporting on.
+`dotfiles-core` ships **configuration only** — shell modules, a Neovim tree, tmux,
+git, starship, and mise. It is not a running service and stores no credentials or
+machine state (see `.gitignore`: secrets, `*.bak`, and `zsh/99-local.zsh` never get
+tracked). Even so, this repo is the keystone of an eleven-repo system: it is vendored
+into every OS repo via `git subtree`, so a defect here **fans out N-way**. That
+makes two classes of issue worth a security report rather than a normal issue:
 
-Two classes of issue warrant a security report rather than a normal issue:
-
-- **A tracked file that leaks a secret.** This repo is public and tracks `ssh/config`
-  (keys themselves are denied by `.gitignore`). A leaked token or private key here is
-  public the moment it lands.
-- **A path in `bootstrap.sh` that can be coerced into running or trusting untrusted
-  input** — in particular anything touching `/etc/apk/keys`, `/etc/apk/repositories`,
-  `/etc/wsl.conf`, or the login shell. The 1Password signing key is pinned by SHA-256
-  and the script fails closed on a mismatch; a way around that check is a valid report.
-
-Note that the vendored `core/` tree is **not** in scope here — it is a `git subtree`
-copy of [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) and is
-overwritten on the next sync. Report those upstream, where a fix can actually land.
+- a tracked file that leaks a secret, token, or other sensitive value, and
+- a Core script (`bin/clip*`, `maint/dotfiles-maint.sh`, `tmux/scripts/*`, or the
+  `scripts/*.sh` dev tooling) that can be coerced into running untrusted input on a
+  consumer's or maintainer's machine.
 
 ## Reporting a vulnerability
 
 **Please do not open a public issue for a security report.** Use GitHub's private
-vulnerability reporting: the **Security** tab → **Report a vulnerability**. That keeps
-details private until a fix is out.
+vulnerability reporting instead: the **Security** tab → **Report a vulnerability**.
+That keeps the details private until a fix has been synced out to the OS repos.
 
 Include, where you can:
 
-- the file and line, and whether it runs at provision time or shell-startup time,
-- how it is reached (a `bootstrap.sh` flag, a sourced fragment, a WSL-only branch), and
+- the file and line involved, and which Core layer it sits in,
+- how it is reached at runtime (sourced module, `bin/` script, tmux popup, …), and
 - a minimal reproduction.
 
-You can expect an acknowledgement within a few days.
+You can expect an acknowledgement within a few days. A confirmed fix lands here
+first, then propagates to each OS repo on the next `./scripts/sync-core.sh`.
 
 ## Scope
 
-In scope: `bootstrap.sh`, `install/packages.txt`, `os/*`, `zsh/*`, `ssh/config`,
-`wsl/wsl.conf`, and this repo's workflows.
-
-Out of scope: anything under `core/` (report to `dotfiles-core`), and the upstream
-tools this layer installs — report those to their own projects.
+In scope: anything tracked in this repository. Out of scope: the OS-native repos
+(`dotfiles-{MacBook,Windows,Fedora,…}`) and `dotfiles-Offense` — report issues that
+are specific to those layers in their own repositories.

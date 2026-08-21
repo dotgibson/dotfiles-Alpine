@@ -1,36 +1,36 @@
-# .pre-commit-config.yaml — author-time guardrails for dotfiles-Alpine.
+# .pre-commit-config.yaml — author-time guardrails for dotfiles-core.
+# Mirrors the CI checks (.github/workflows/ci.yml) so drift is caught locally,
+# before it is committed and subtree-synced into the nine OS repos.
 #
-# Mirrors this repo's CI gate (.github/workflows/lint.yml → dotfiles-core's
-# lint-call.yml) so a break is caught before it is committed, not after it is pushed.
-# Deliberately a SUBSET of core/.pre-commit-config.yaml:
-#
-#   * every hook excludes ^core/ — that tree is a vendored subtree, gated by its own
-#     upstream CI, and edits to it are refused by the core-guard hook anyway.
-#   * no audit-core hook: scripts/audit-core.sh is Core's contract check, not this
-#     layer's, and it is already enforced upstream before anything is vendored here.
-#
-#   one-time:  pip install pre-commit && make hooks
+#   one-time:  pip install pre-commit && pre-commit install
 #   manual:    pre-commit run --all-files
 #
-# Revs are pinned to the same versions core/.pre-commit-config.yaml uses; keep them in
-# step when Core moves, so the fleet lints identically.
-
-exclude: '^core/'
+# zsh modules are intentionally excluded from shellcheck/shfmt (shellcheck has no
+# zsh mode); scripts/audit-core.sh runs `zsh -n` on them instead. Each hook scopes
+# itself via `files:`, so there is no global exclude (a global one would also
+# suppress the luacheck hook below).
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '(^core/|\.md$)'
+        exclude: '\.md$'
       - id: end-of-file-fixer
       - id: check-merge-conflict
+      # Parse-check the config/data files that fan out to all nine OS repos: a broken
+      # starship.toml / mise config.toml / workflow yaml is valid text (shellcheck
+      # & zsh -n never see it) but dead at runtime for every consumer. Mirrors the
+      # toml/yaml section in scripts/audit-core.sh.
+      - id: check-toml
       - id: check-yaml
+      # check-json only matches *.json (not the *.jsonc config files) — it guards
+      # nvim/lazy-lock.json, the reproducible-plugin pin set. Mirrors the json arm
+      # in scripts/audit-core.sh.
       - id: check-json
       - id: check-executables-have-shebangs
-      # The bug the fleet's exec-bit discipline started from: a file with a shebang
-      # that is not executable. bootstrap.sh is the only executable here and it must
-      # stay one — a non-executable bootstrap is a broken install for every new box.
+      # The bug this whole effort started from: a script with a shebang that
+      # isn't executable. Catches exec-bit regressions at commit time.
       - id: check-shebang-scripts-are-executable
 
   - repo: https://github.com/koalaman/shellcheck-precommit
@@ -38,28 +38,41 @@ repos:
     hooks:
       - id: shellcheck
         args: ["-x"]
-        files: '\.sh$'
-        exclude: '^core/'
+        files: '(\.sh|bin/clip|bin/clip-paste)$'
 
-  # The README is this layer's public landing page and the one file class that
-  # shellcheck and `zsh -n` never inspect. .markdownlint.jsonc shipped here from the
-  # start but nothing ever ran it — the lint workflow skipped **.md entirely — so it
-  # was decoration. This is where it becomes real; `make md` runs the same tool.
+  # Markdown is the deliverable on this public showcase repo and the one file class
+  # shellcheck/zsh -n/toml-yaml never inspect — so lint it at author time too.
+  # Shares .markdownlint.jsonc with the audit's markdown section (one rule config).
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
-        exclude: '^core/'
 
-  # This repo is PUBLIC and tracks ssh/config. GitHub's push protection catches
-  # provider-shaped tokens, but non-provider patterns are off by default — a private
-  # key pasted into ssh/config would sail straight through. gitleaks reads the actual
-  # diff, at author time, before the push exists.
+  # Secret scanning — Core ships 1Password helpers (zsh/50-op.zsh), a git-identity
+  # template, and fans out to 9 PUBLIC repos, so a leaked token here amplifies
+  # N-way. gitleaks at author time catches it in the commit diff before it lands;
+  # the audit's "secrets" section (scripts/audit-core.sh) is the CI mirror. Pinned
+  # rev kept in step with GITLEAKS_VERSION by the audit's version-consistency gate.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks
 
-# NB: zsh -n is NOT a pre-commit hook — pre-commit has no zsh syntax stage, and
-# shellcheck has no zsh mode. `make zsh` and the CI gate cover *.zsh instead. That
-# now includes zsh/zshenv.zsh, which was invisible to both until it was renamed.
+  # NB: shfmt is intentionally NOT enforced — the scripts here use a deliberate
+  # compact one-liner style that shfmt would expand (see scripts/audit-core.sh).
+  # luacheck is NOT a standalone hook either: it discovers .luacheckrc by
+  # searching up from the CWD, so run from repo root it misses nvim/.luacheckrc
+  # and floods false "undefined vim" warnings. The audit-core hook below runs it
+  # correctly (from inside nvim/) — one correct invocation, no duplication.
+
+  # The contract check — manifest <-> filesystem drift + exec-bit invariants +
+  # shellcheck + luacheck (run correctly). Local hook so it always runs the
+  # in-repo script (single source of truth, identical to CI).
+  - repo: local
+    hooks:
+      - id: audit-core
+        name: Core manifest/exec-bit audit
+        entry: ./scripts/audit-core.sh --quiet
+        language: script
+        pass_filenames: false
+        always_run: true
