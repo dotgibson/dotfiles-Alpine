@@ -7,7 +7,7 @@ security surface, and it is the part worth reporting on.
 
 Two classes of issue warrant a security report rather than a normal issue:
 
-- **A tracked file that leaks a secret.** This repo is public and tracks `ssh/config`
+- **A tracked file that leaks a secret.** This repo is public
   (keys themselves are denied by `.gitignore`). A leaked token or private key here is
   public the moment it lands.
 - **A path in `bootstrap.sh` that can be coerced into running or trusting untrusted
@@ -35,7 +35,7 @@ You can expect an acknowledgement within a few days.
 
 ## Scope
 
-In scope: `bootstrap.sh`, `install/packages.txt`, `os/*`, `zsh/*`, `ssh/config`,
+In scope: `bootstrap.sh`, `install/packages.txt`, `os/*`, `zsh/*`,
 `wsl/wsl.conf`, and this repo's workflows.
 
 Out of scope: anything under `core/` (report to `dotfiles-core`), and the upstream
