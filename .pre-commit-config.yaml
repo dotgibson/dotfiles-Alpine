@@ -51,9 +51,9 @@ repos:
       - id: markdownlint-cli2
         exclude: '^core/'
 
-  # This repo is PUBLIC and tracks ssh/config. GitHub's push protection catches
+  # This repo is PUBLIC. GitHub's push protection catches
   # provider-shaped tokens, but non-provider patterns are off by default — a private
-  # key pasted into ssh/config would sail straight through. gitleaks reads the actual
+  # key pasted into a tracked file would sail straight through. gitleaks reads the actual
   # diff, at author time, before the push exists.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1

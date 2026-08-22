@@ -1,7 +1,7 @@
 # .gitleaks.toml — secret-scanning config for dotfiles-Alpine.
 #
 # Extends gitleaks' default ruleset rather than replacing it: this repo is public and
-# tracks ssh/config, so the full rule set is what we want. The only local change is a
+# is public, so the full rule set is what we want. The only local change is a
 # scope one.
 #
 # WHY core/ IS ALLOWLISTED: it is a vendored git-subtree copy of dotfiles-core,

@@ -64,7 +64,7 @@ md:
 	@command -v markdownlint-cli2 >/dev/null 2>&1 || { echo '- markdownlint-cli2 not installed — SKIP'; exit 0; }; \
 	  echo ':: markdownlint-cli2'; markdownlint-cli2 $$(git ls-files '*.md' ':!:core/**')
 
-# This repo tracks ssh/config and is public. Core runs gitleaks at author time and in
+# This repo is public. Core runs gitleaks at author time and in
 # its audit; nothing ran it here. GitHub push protection covers provider patterns only.
 secrets:
 	@command -v gitleaks >/dev/null 2>&1 || { echo '- gitleaks not installed — SKIP'; exit 0; }; \
