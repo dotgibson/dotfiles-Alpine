@@ -52,6 +52,12 @@ OP_APK_KEY_URL="https://downloads.1password.com/linux/keys/alpinelinux/support@1
 # token, so annotate this one line rather than weaken the rule for the whole repo.
 OP_APK_KEY_SHA256="0e88171d9f8b7630763f70cbf69f2a01b4ba8ea1d8e79487f59c162db255eb84" # gitleaks:allow
 
+# nvim-treesitter (core/nvim, pinned to `main`) hard-requires this tree-sitter-cli
+# version. Named once here because it is asserted in three places that must agree:
+# _dotfiles_ts_meets_floor below, install/packages.txt's note on the apk entry, and
+# core/PORTING-MATRIX.md footnote 5. Bump it only when Core's floor actually moves.
+TREESITTER_FLOOR="0.26.1"
+
 while [[ $# -gt 0 ]]; do case "$1" in
   --links-only) LINKS_ONLY=1 ;;
   --dry-run | -n) DRY=1; LINKS_ONLY=1 ;;
@@ -173,6 +179,67 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   return 0
 }
 
+# ── tree-sitter version floor ─────────────────────────────────────────────────
+# nvim-treesitter (pinned to `main` in core/nvim) hard-requires tree-sitter-cli
+# >= 0.26.1. Alpine's `community` package IS the musl build, but it only CLEARS
+# that floor on v3.24 (0.26.7-r0) and edge (0.26.7-r1) — v3.21 ships 0.24.4-r0
+# and v3.22/v3.23 ship 0.25.10-r0. So on three of the four supported stable
+# branches, `apk add tree-sitter-cli` succeeds and leaves the box BELOW the floor.
+#
+# That is why the cargo fallback below is version-guarded and not merely
+# presence-guarded: apk's 0.25.10 satisfies `command -v tree-sitter`, so a
+# presence guard short-circuits the build and the box lands below the floor
+# silently — no error, no warning, nvim-treesitter quietly broken.
+#
+# The fix works because ~/.cargo/bin is PREPENDED ahead of /usr/bin by
+# core/zsh/00-tools.zsh (and by os/alpine.zsh), so a cargo-built 0.26.7 SHADOWS
+# apk's older /usr/bin/tree-sitter rather than losing to it. Without that
+# ordering this block would build a binary nothing would ever run.
+
+# _dotfiles_ver_lt <a> <b> — true when version a sorts BELOW version b.
+# Field-wise integer compare, mirroring core/scripts/verify-atuin-guard.sh's
+# ver_cmp: no `sort -V` (GNU-only; Alpine ships busybox sort) and no string
+# compare, which would wrongly rank 0.26.10 below 0.26.9. Non-numeric or missing
+# fields read as 0, so a pre-release suffix degrades to "build it" rather than
+# to a parse error.
+_dotfiles_ver_lt() { # <a> <b>
+  local i x y
+  local -a A B
+  local IFS=.
+  # shellcheck disable=SC2206  # deliberate word-splitting on IFS=. — that IS the parse
+  A=(${1%%-*})
+  # shellcheck disable=SC2206
+  B=(${2%%-*})
+  unset IFS
+  for ((i = 0; i < 4; i++)); do
+    x="${A[i]:-0}"
+    y="${B[i]:-0}"
+    [[ "$x" =~ ^[0-9]+$ ]] || x=0
+    [[ "$y" =~ ^[0-9]+$ ]] || y=0
+    ((10#$x < 10#$y)) && return 0
+    ((10#$x > 10#$y)) && return 1
+  done
+  return 1 # equal — the floor is >=, so equality is NOT below it
+}
+
+# _dotfiles_ts_meets_floor <floor> — true when SOME already-installed tree-sitter
+# clears <floor>. Checks the PATH binary AND ~/.cargo/bin explicitly, because
+# provision() runs BEFORE wire_links(), so ~/.cargo/bin is not on this shell's
+# PATH yet — the same two-part guard the yazi block above relies on. A binary
+# whose `--version` cannot be run or parsed counts as NOT meeting the floor.
+_dotfiles_ts_meets_floor() { # <floor>
+  local floor="$1" cand out ver
+  for cand in "$(command -v tree-sitter 2>/dev/null)" "$HOME/.cargo/bin/tree-sitter"; do
+    [[ -n "$cand" && -x "$cand" ]] || continue
+    out="$("$cand" --version 2>/dev/null)" || continue
+    # `tree-sitter --version` prints "tree-sitter 0.26.7"; take the last field.
+    ver="${out##* }"
+    [[ "$ver" =~ ^[0-9] ]] || continue
+    _dotfiles_ver_lt "$ver" "$floor" || return 0
+  done
+  return 1
+}
+
 # ── fetch a file only if it matches a pinned SHA-256 ───────────────────────────
 # Downloads to a temp path, verifies, and only then installs to <dest>. Returns
 # non-zero WITHOUT writing anything on any failure (fetch, checksum, or install), so
@@ -288,10 +355,20 @@ provision() {
     blib_say "yazi (cargo build from source — slow on musl, output below)"
     cargo install --force --locked yazi-build || true
   fi
-  if ! command -v tree-sitter >/dev/null && [[ ! -x "$HOME/.cargo/bin/tree-sitter" ]] && command -v cargo >/dev/null; then
-    blib_say "tree-sitter-cli (cargo build)"
-    cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
-      echo "   tree-sitter-cli build failed; retry later: cargo install --locked tree-sitter-cli"
+  # tree-sitter is VERSION-guarded, not presence-guarded — see the floor helpers
+  # near the top of this file for why apk's own package is not enough on v3.21,
+  # v3.22 or v3.23. Best-effort like its neighbours: a build hiccup must never
+  # abort bootstrap, but it must not pass silently either.
+  if ! _dotfiles_ts_meets_floor "$TREESITTER_FLOOR"; then
+    if command -v cargo >/dev/null; then
+      blib_say "tree-sitter-cli (cargo build — apk's build is below the >=$TREESITTER_FLOOR floor, or absent)"
+      cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
+        echo "   tree-sitter-cli build failed; retry later: cargo install --locked tree-sitter-cli"
+    else
+      # Do NOT let this one go quiet. The whole bug this guard fixes was a box
+      # sitting below the floor with nvim-treesitter broken and nothing said.
+      blib_warn "tree-sitter-cli is absent or below nvim-treesitter's >=$TREESITTER_FLOOR floor and cargo is not installed — install it (${SU:+$SU }apk add cargo) then: cargo install --locked tree-sitter-cli (or: mise use -g tree-sitter)"
+    fi
   fi
   # tealdeer (tldr): `testing`-only on Alpine (never in `community`), so not in
   # packages.txt — build from source via cargo. Presence-guarded on the `tldr`
@@ -349,7 +426,12 @@ provision() {
     blib_say "duf / glow / sesh (go install — testing-only/unpackaged on Alpine; musl-safe static)"
   fi
   _dotfiles_go_install github.com/muesli/duf@latest duf
-  _dotfiles_go_install github.com/charmbracelet/glow/v2@latest glow
+  # charm.land, NOT github.com: Charm moved its tools off GitHub as a MODULE HOST
+  # (glow is charm.land/glow/v3 as of v3.0.0, 2026-08-11; core/PORTING-MATRIX.md
+  # records the move). The old github.com/charmbracelet/glow/v2 path still resolves,
+  # which is exactly why this went unnoticed — `@latest` on it quietly pins the newest
+  # v2 tag, so the box got a stale MAJOR rather than an error.
+  _dotfiles_go_install charm.land/glow/v3@latest glow
   _dotfiles_go_install github.com/joshmedeski/sesh/v2@latest sesh
 
   # ── op (1Password CLI): native musl apk from 1Password's official Alpine repo —
