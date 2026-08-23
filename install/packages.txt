@@ -5,8 +5,10 @@
 # A few tools are NOT listed here and are built from source in bootstrap.sh instead:
 # tealdeer (testing-only, cargo) plus duf, glow and sesh (go install) — all four are
 # testing-only or unpackaged on Alpine, so listing them would only break bulk install.
-# starship, yazi, tree-sitter-cli and viddy recently landed in `community` and are
-# apk-installed below, with bootstrap keeping a presence-guarded source build as a fallback.
+# starship (since v3.21) and yazi (since v3.22) recently landed in `community`. NOT
+# tree-sitter-cli or viddy: both have been in `community` since v3.17 — what is recent
+# about those two is that *this repo* stopped source-building them, not Alpine's packaging.
+# All four are apk-installed below, with bootstrap keeping a source build as a fallback.
 
 # ── shell + multiplexer ───────────────────────────────────────
 bash           # bootstrap.sh is a bash script; a fresh Alpine ships only busybox ash,
@@ -34,8 +36,16 @@ atuin          # shell history (in Alpine repos — no installer needed)
 
 # ── recently promoted to `community` (were bootstrap source-builds until v3.24) ──
 # apk installs the native musl build first; bootstrap.sh's cargo/curl blocks are now
-# presence-guarded fallbacks that skip when apk already provided the binary. The
-# community tree-sitter-cli IS the musl build and clears nvim-treesitter's >=0.26.1 floor.
+# fallbacks that skip when apk already provided the binary. Three of the four are
+# presence-guarded; tree-sitter-cli is the exception and is version-guarded, because:
+#
+# The community tree-sitter-cli IS the musl build on every branch, but it only CLEARS
+# nvim-treesitter's >=0.26.1 floor on v3.24 (0.26.7-r0) and edge (0.26.7-r1). v3.21 ships
+# 0.24.4-r0 and v3.22/v3.23 ship 0.25.10-r0 — all three BELOW the floor. Keep the name
+# listed anyway: it resolves on all five branches and is the right build on the two where
+# it clears. The version guard is what covers the three older branches — a presence guard
+# would see apk's 0.25.10, skip the build, and leave the box below the floor in silence.
+# The floor lives in one place: TREESITTER_FLOOR in bootstrap.sh.
 starship       # prompt (musl build in community; official installer kept as fallback)
 yazi           # file manager (community; cargo build kept as fallback). In `community`
                # only since v3.22 — NOT on v3.21 (supported to 2026-11-01), where this
@@ -125,7 +135,9 @@ py3-pynvim     # pynvim — the Python 3 provider module (Alpine name)
 curl
 wget
 jq
-w3m            # terminal web browser (text-mode; in community repo)
+w3m            # terminal web browser (text-mode). Deliberately unqualified by repo:
+               # it ships from `main` on v3.23 and `community` on the other four
+               # branches, and `apk add w3m` resolves the same either way.
 gawk
 direnv
 iproute2       # full `ip` — busybox's `ip` applet lacks `-brief`, which the `localip`
