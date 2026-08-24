@@ -126,6 +126,35 @@ go             # go toolchain — REQUIRED for the duf/glow/sesh `go install` fa
 pkgconf        # some crates probe libs via pkg-config at build time
 openssl-dev    # ditto — common cargo build dependency
 
+# ── headers for mise's source builds of node/python/ruby (musl) ──────────────
+# On musl, mise flips `all_compile` to true by DEFAULT (a mise-side default, not a
+# setting in core/mise/config.toml): every precompiled runtime it would otherwise
+# fetch — nodejs.org's tarballs, python-build-standalone, the jdx/ruby prebuilts —
+# is glibc-linked and cannot run here. So node/python/ruby are always COMPILED on
+# Alpine, and each compile needs the -dev headers below. Without them `mise install`
+# (and the daily `mise upgrade` in core/maint/dotfiles-maint.sh) fails every run with
+# three source-build errors and the three runtimes stay `(missing)` in `mise ls`:
+#   node   → deps/uv/src/unix/udp.c: fatal error: linux/errqueue.h  (linux-headers)
+#   python → zipimport.ZipImportError: can't decompress data; zlib not available,
+#            plus _ctypes/_curses/readline/_bz2/_lzma/_zstd/_uuid "missing"
+#   ruby   → yaml.h not found (psych), "missing libffi" (fiddle), zlib not configured
+# build-base + openssl-dev above are already required and cover the rest.
+# Deliberately NOT listed: tk-dev. It only supplies Python's _tkinter and drags in
+# the X libs this file keeps optional (see the clipboard note) — a headless Alpine
+# should not pull an X stack to build an interpreter nothing runs a GUI on.
+linux-headers  # kernel uapi headers — node's bundled libuv includes linux/errqueue.h
+zlib-dev       # python zlib (ensurepip dies without it) + ruby zlib ext
+libffi-dev     # python _ctypes + ruby fiddle
+yaml-dev       # ruby psych (yaml.h) — the YAML ext Bundler/RubyGems need
+readline-dev   # python readline + ruby's interactive line editing
+ncurses-dev    # python _curses / _curses_panel  (the runtime `ncurses` is listed below)
+bzip2-dev      # python _bz2
+xz-dev         # python _lzma
+zstd-dev       # python _zstd (new stdlib module in 3.14)
+sqlite-dev     # python sqlite3
+gdbm-dev       # python _dbm / _gdbm
+util-linux-dev # python _uuid (libuuid)
+
 # ── Neovim provider deps (fix :checkhealth) ───────────────────
 python3
 py3-pip
