@@ -14,6 +14,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # For packages-check ONLY, and it is the reason that job is worth having. A package
+  # rename or drop upstream breaks this repo's list with NOBODY having edited the repo,
+  # so a gate that fires only on pull_request cannot see the failure it exists to catch —
+  # it would go red on the next unrelated PR, blaming a change that did not cause it.
+  # Core's bootstrap-test.yml recommends pairing packages_check with a schedule for
+  # exactly this. The other jobs re-running weekly is harmless; this is not a path filter
+  # and does not affect what reports on a PR (see the note above).
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC — off the hour, to dodge the runner rush
 
 permissions:
   contents: read
@@ -23,7 +32,18 @@ jobs:
     uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v4
     with:
       image: alpine:3.24
-      prep: apk add --no-cache bash zsh
+      # `&& apk update` is for packages-check, and it is load-bearing there. That job
+      # resolves ~70 names with `apk info`, which reads the LOCAL package index — and
+      # `apk add --no-cache` deliberately leaves none behind. Without the update the
+      # resolver would find no index and report every name unresolved: a false red on the
+      # whole list, the "false accusation" failure the reusable workflow warns about.
+      # It belongs in prep rather than in the resolve command because prep is what the
+      # reusable workflow RETRIES (5x, for mirror timeouts). Fetching the index once here,
+      # under that retry, keeps all ~70 lookups local and deterministic; a per-name
+      # `apk info --no-cache` would put ~70 unretried network calls in the loop, where one
+      # mirror blip reds a PR that changed nothing.
+      # Harmless to the other two jobs: they only need bash + zsh, which they still get.
+      prep: apk add --no-cache bash zsh && apk update
       # Run provision() for real, with package managers and downloaders replaced by
       # logging no-ops (dotgibson/dotfiles-core#575). --links-only returns BEFORE
       # provision() is entered, so package installation, retries, upstream installers,
@@ -31,3 +51,17 @@ jobs:
       # anywhere. A green run means provision() ran and RETURNED, and wire_links still
       # happened after it — not that provisioning works: nothing is really installed.
       provision_stub: true
+      # Resolve every name in install/packages.txt against the real v3.24 repos, without
+      # downloading or installing anything. This is the blind spot provision_stub cannot
+      # cover: it stubs the package managers, so a WRONG PACKAGE NAME is invisible to it.
+      #
+      # `apk info` is the right probe and the alternatives are traps. `apk info <name>`
+      # exits 0 for a name that exists in the repos even when it is NOT installed (which is
+      # every name, in a fresh container) and 1 for a name that exists nowhere — verified
+      # both ways. `apk policy` exits 0 for a BOGUS name, so it would be a gate that can
+      # never fail; `apk info -e` queries only INSTALLED packages, so it would fail on all
+      # of them. Neither would be visibly broken — both look green or red for the wrong
+      # reason — so do not "simplify" this to either.
+      packages_check: apk info
+      # packages_file is left at its default (install/packages.txt): this repo's list needs
+      # no pre-filtering, unlike dotfiles-Debian's per-distro annotations.
