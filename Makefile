@@ -68,7 +68,7 @@ md:
 # its audit; nothing ran it here. GitHub push protection covers provider patterns only.
 secrets:
 	@command -v gitleaks >/dev/null 2>&1 || { echo '- gitleaks not installed — SKIP'; exit 0; }; \
-	  echo ':: gitleaks'; gitleaks dir . --no-banner --redact
+	  echo ':: gitleaks'; gitleaks dir . -c .gitleaks.toml --no-banner --redact
 
 # Content-addressed tamper check: does HEAD:core still match the commit core.lock
 # pins? Delegates to Core's own script — this repo does not reimplement it.

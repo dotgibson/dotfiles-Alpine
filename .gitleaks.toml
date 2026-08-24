@@ -17,8 +17,19 @@
 # sets pass_filenames: false, so its `exclude:` cannot restrict the scan — this config
 # is the only thing that does, for both entry points.
 
+# EXTENDS CORE'S POLICY, not the stock rule set (dotgibson/dotfiles-core#624). Core's
+# lint-call.yml states the rule: one policy file, Core's, so every repo is measured the same
+# way and no repo can widen its own allowlist. gitleaks auto-discovers this file at the scan
+# root, so before this change EVERY scan here — including `make secrets`, which passes no
+# -c at all — silently ran under a private rule set instead.
+#
+# Extending rather than replacing keeps both: Core's narrowing of the curl-auth-user
+# false positive (a credential position holding a VARIABLE REFERENCE, which is the secure
+# shape) plus the local path scoping below. `useDefault` is deliberately absent — Core's own
+# config already extends the upstream defaults and that inheritance carries through, verified
+# with the pinned gitleaks 8.30.1: a real literal credential is still caught.
 [extend]
-useDefault = true
+path = "core/gitleaks.toml"
 
 [allowlist]
 description = "vendored Core subtree — scanned upstream, unfixable here"
