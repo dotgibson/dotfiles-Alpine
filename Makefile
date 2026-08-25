@@ -66,9 +66,16 @@ md:
 
 # This repo is public. Core runs gitleaks at author time and in
 # its audit; nothing ran it here. GitHub push protection covers provider patterns only.
+#
+# -c core/gitleaks.toml is the ONE fleet policy — the same file Core's reusable lint-call.yml
+# passes for the blocking CI leg, so author time and CI measure the same thing. This used to
+# point at a repo-local .gitleaks.toml, which gitleaks ALSO auto-discovers: every scan in this
+# repo silently ran under a private rule set, and read as green because that set allowlisted
+# the finding rather than because Core's policy was applied (dotgibson/dotfiles-core#624).
+# See VENDORING.md, "The gates you run OVER the vendored tree".
 secrets:
 	@command -v gitleaks >/dev/null 2>&1 || { echo '- gitleaks not installed — SKIP'; exit 0; }; \
-	  echo ':: gitleaks'; gitleaks dir . -c .gitleaks.toml --no-banner --redact
+	  echo ':: gitleaks'; gitleaks dir . -c core/gitleaks.toml --no-banner --redact
 
 # Content-addressed tamper check: does HEAD:core still match the commit core.lock
 # pins? Delegates to Core's own script — this repo does not reimplement it.
