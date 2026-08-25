@@ -59,6 +59,13 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
+        # The ONE fleet policy, Core's — mirroring Core's own hook. This hook sets
+        # pass_filenames: false, so an `exclude:` key cannot scope it and the config is the only
+        # thing that governs what it reads. Until dotgibson/dotfiles-core#624 that was a
+        # repo-local .gitleaks.toml, auto-discovered, so this hook was measuring a private rule
+        # set while CI measured Core's. A hook greener than CI is one people trust and then get
+        # surprised by.
+        args: ["--config", "core/gitleaks.toml"]
 
 # NB: zsh -n is NOT a pre-commit hook — pre-commit has no zsh syntax stage, and
 # shellcheck has no zsh mode. `make zsh` and the CI gate cover *.zsh instead. That
