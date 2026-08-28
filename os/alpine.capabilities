@@ -1,0 +1,57 @@
+# os/alpine.capabilities — the Alpine capability declaration (Core v5, #663/#667).
+# ──────────────────────────────────────────────────────────────────────────────
+# Read (never sourced) by Core's zsh/02-capabilities.zsh into $_CORE_CAP, and by
+# maint/dotfiles-maint.sh, which is bash. bootstrap.sh links it to
+# $ZDOTDIR/os.capabilities via blib_link_os_layer.
+#
+# Transcribed from core/PORTING-MATRIX.md §"Package-manager commands", Alpine column.
+# Validate with:  core/scripts/check-capabilities.sh os/alpine.capabilities
+#
+# DOAS, NOT SUDO — the Alpine fact this file exists to declare. A leading privilege
+# word NAMES THE INTENT ("this needs root"), not the tool: Core's _pkgup_run strips
+# either and hands the rest to its own ladder, and the maint runner rewrites it to
+# `doas -n`. So `doas` here is documentation of what this box actually has, and it
+# stays correct on the rare Alpine box that installs sudo as well.
+#
+# A `#` INSIDE A VALUE IS NOT A COMMENT — the reader keeps it. Notes go above.
+
+# ── package-manager verbs (all required) ──────────────────────────────────────
+PKG_REFRESH=doas apk update
+PKG_UPGRADE=doas apk upgrade
+PKG_INSTALL=doas apk add
+PKG_REMOVE=doas apk del
+PKG_SEARCH=apk search
+PKG_OWNS=apk info --who-owns
+PKG_COUNT_PENDING=apk list -u
+# `apk list -u` prints one upgradable package per line, name-version first, so the
+# default match (`.`) and field (1) are right and no PKG_PENDING_* key is needed.
+
+# ── scheduler (required) ──────────────────────────────────────────────────────
+# OpenRC, not systemd: this box has `crontab` (busybox crond) and no systemctl, so
+# `cron` is the honest answer and Core's 55-maint.zsh has had a live cron arm all
+# along. `none` — which would mean "this box cannot hold a timer" — was the only
+# value the schema accepted before #665 added this one, and it was a lie here.
+SCHEDULER=cron
+# NO SCHEDULER_UNIT_DIR: cron's entry lives in the user's crontab, not a file of its
+# own. The validator rejects one here rather than letting it read as configured.
+
+# ── how `up` applies ──────────────────────────────────────────────────────────
+# apk resolves against the index on disk, so the refresh is a real precondition and
+# a failure ABORTS the upgrade rather than upgrading against a stale index.
+PKG_UPGRADE_PRE=doas apk update
+# NO PKG_ASSUME_YES and NO PKG_UPGRADE_PARTIAL, and both absences are STATEMENTS.
+# Alpine's repositories move as a set; `apk add -u <pkg>` against a partially-synced
+# index is the same class of footgun as Arch's `-Sy <pkg>`. `up -i` REFUSES here,
+# which is how this archive says it updates as a whole.
+
+# ── the scheduled runner ──────────────────────────────────────────────────────
+# NO MAINT_UNATTENDED_UPGRADE. Alpine's edge/testing repositories are where most of
+# this stack comes from (see install/packages.txt), so an unattended full upgrade
+# pulls testing-quality churn onto a box nobody is watching. Omission is how a repo
+# refuses, and refusing is the default. Apply with `up`.
+
+# ── optional tools ────────────────────────────────────────────────────────────
+# NO TOOLS_OPTIN. PORTING-MATRIX.md's ²¹ cells show Alpine PACKAGES jj and ast-grep,
+# the two tools that are opt-in on Gentoo and the Debian family — so Alpine has no
+# delta from Core's _CORE_DOCTOR_OPTIN default and declaring a list would only be a
+# copy that can drift. Omitting the key is the per-key fallback the schema allows.
