@@ -23,7 +23,7 @@ ZSH_FILES := $(shell git ls-files '*.zsh' ':!:core/**')
 # Identical to the reusable gate's env, so a local pass means a CI pass.
 export SHELLCHECK_OPTS := -e SC1090 -e SC1091 -e SC2015 -e SC2088
 
-.PHONY: help check shell zsh actions md secrets verify-core dry-run hooks
+.PHONY: help check shell zsh actions md secrets verify-core dry-run hooks capabilities
 
 help:
 	@echo 'dotfiles-Alpine — local gates (mirror of CI)'
@@ -38,7 +38,7 @@ help:
 	@echo '  make dry-run      preview the bootstrap wiring; change nothing'
 	@echo '  make hooks        install the pre-commit hooks'
 
-check: shell zsh actions md secrets
+check: shell zsh actions md secrets capabilities
 	@echo '✓ all local gates passed'
 
 shell:
@@ -106,3 +106,23 @@ dry-run:
 hooks:
 	@command -v pre-commit >/dev/null 2>&1 || { echo 'pre-commit not installed: pip install pre-commit'; exit 1; }; \
 	  pre-commit install
+
+# ── the OS capability declaration (Core v5, #663/#667) ────────────────────────
+# ONE definition of the schema gates all seven declaring repos: the validator is
+# core/scripts/check-capabilities.sh, vendored with Core, so a schema change arrives
+# with the next sync instead of needing seven hand-written greps to be updated in
+# step. Core's own `make audit` runs the same script over its shipped example and
+# sweeps the fleet for these files; this is the local half of that gate.
+#
+# The glob is guarded because an unmatched glob stays LITERAL in sh — without the
+# test this would "validate" a file named `os/*.capabilities` and pass on nothing,
+# which is the failure mode a gate must never have.
+capabilities: ## Validate os/*.capabilities against Core's schema
+	@rc=0; found=0; \
+	for f in os/*.capabilities; do \
+	  [ -e "$$f" ] || continue; found=1; \
+	  core/scripts/check-capabilities.sh "$$f" --packages install/packages.txt || rc=1; \
+	done; \
+	if [ "$$found" -eq 0 ]; then echo "!! no os/*.capabilities — this repo must declare one (see core/examples/os.capabilities.example)"; rc=1; fi; \
+	exit $$rc
+
