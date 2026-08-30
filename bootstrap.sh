@@ -393,7 +393,9 @@ provision() {
     cargo install --locked jnv >/dev/null 2>&1 ||
       echo "   jnv build failed; retry later: cargo install --locked jnv"
   fi
-  # ouch (archive (de)compressor): also unpackaged on Alpine — cargo only.
+  # ouch (archive (de)compressor): `testing`-only on Alpine (edge/testing 0.6.1-r0,
+  # absent from every stable branch), so cargo is its real source here — the same
+  # shape as duf/glow below, which go-install for the same reason.
   #
   # DO NOT "simplify" this to a plain `cargo install --locked ouch`: it FAILS on musl.
   # ouch's DEFAULT features include bzip3, whose libbzip3-sys build script runs bindgen,
