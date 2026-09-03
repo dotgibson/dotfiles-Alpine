@@ -165,12 +165,20 @@ This is an **OS-native layer**, so the contribution rule is a boundary rule:
    upstream). Run the same checks locally before you push:
 
    ```sh
-   make check          # shellcheck · bash -n · zsh -n · markdownlint · gitleaks
+   make lint           # shellcheck · bash -n · zsh -n · markdownlint · gitleaks
+   make check          # lint + a hermetic --links-only run (on an Alpine box)
+   make packages-check # do all install/packages.txt names still resolve? (needs apk)
    make hooks          # optional: run them automatically on every commit
    ```
 
-   `make check` is a mirror of CI, not a second opinion: same tools, same flags,
+   `make lint` is a mirror of CI, not a second opinion: same tools, same flags,
    same excludes. A tool you don't have installed SKIPs rather than fails.
+
+   Those names are the fleet's canonical verbs, declared once in `dotfiles-core`'s
+   `scripts/make-vocabulary.txt` so a target means the same thing in every repo
+   ([dotgibson/dotfiles-core#691](https://github.com/dotgibson/dotfiles-core/issues/691)).
+   `make lint` is what this repo used to spell `make check`; `check` now adds the
+   bootstrap run on top, and `verify-core` is kept as an alias of `core-verify`.
 
 Bugs and ideas: open an
 [issue](https://github.com/dotgibson/dotfiles-Alpine/issues).

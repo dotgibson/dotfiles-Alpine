@@ -14,11 +14,12 @@
 ## Vendored Core
 
 - [ ] No hand-edits under `core/` (it is a subtree, overwritten on the next sync)
-- [ ] `make verify-core` still reports pristine, if a sync was involved
+- [ ] `make core-verify` still reports pristine, if a sync was involved
 
 ## Checks
 
-- [ ] `make check` is green locally (shellcheck · `bash -n` · `zsh -n` · markdownlint · gitleaks)
+- [ ] `make lint` is green locally (shellcheck · `bash -n` · `zsh -n` · markdownlint · gitleaks)
+- [ ] On an Alpine box: `make check` — `lint` plus a hermetic `--links-only` run
 - [ ] If `bootstrap.sh` changed, `./bootstrap.sh --dry-run` was run and mutates nothing
 - [ ] If a new repo-owned `*.zsh` was added, it is covered by the lint glob
 
