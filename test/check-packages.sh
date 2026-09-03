@@ -4,9 +4,9 @@
 # Does every package name in install/packages.txt still RESOLVE on this Alpine
 # branch — WITHOUT installing anything?
 #
-# bootstrap.sh's apk_install is deliberately forgiving: a bulk `apk add` that fails
+# bootstrap.sh's apk_install() is deliberately forgiving: a bulk `apk add` that fails
 # retries package-by-package and prints "skipped (unavailable on this box?)" for each
-# casualty (bootstrap.sh:144). That resilience is right for a live box — one dead name
+# casualty. That resilience is right for a live box — one dead name
 # should not sink the whole install — but it means a typo, a rename, or a package that
 # moved out of `community` is easy to miss: the run is noisy, never fatal, and reads as
 # success. This turns that drift into a gate. It installs NOTHING.
@@ -89,25 +89,61 @@ if [[ -z "$(ls -A /var/cache/apk 2>/dev/null)" && ! -s /lib/apk/db/installed ]];
   apk update >/dev/null 2>&1 || bad "apk update failed; results may be wrong"
 fi
 
-# --simulate touches nothing, so it needs no root; but it still reads apk's lock, which
-# a bare non-root shell cannot on some setups. In CI apk runs as root; locally, fall
-# through the doas/su that bootstrap.sh already assumes for apk.
-sim() { apk add --simulate --quiet "$@" 2>&1; }
+# Privilege: mirror bootstrap.sh's selection — root uses nothing, else doas (Alpine's
+# default), else sudo. But --simulate WRITES nothing and on a normal box apk's db is
+# world-readable, so the unprivileged call is the fast common path (it is why this gate
+# runs green as a plain user). We escalate through $SU only when apk cannot OPEN its own
+# lock/db — never gratuitously, which would make the gate prompt for a doas password it
+# does not need.
+if [[ "$(id -u)" -eq 0 ]]; then SU=""
+elif command -v doas >/dev/null 2>&1; then SU="doas"
+elif command -v sudo >/dev/null 2>&1; then SU="sudo"
+else SU=""; fi
+
+# A lock/permission error is apk failing to read its OWN database — an environment
+# problem (unprivileged with no working escalator, a held lock), NOT a bad package name.
+# Misreporting it as drift (exit 2) is exactly the false failure this must avoid.
+env_failure() { printf '%s' "$1" | grep -qiE 'permission denied|unable to lock|failed to open apk database|could not (open|read)'; }
+
+# apk's real resolver, run without root first; on a lock/permission error, retry once
+# under $SU (if any). Prints the final combined output and returns apk's status.
+sim() {
+  local out rc
+  out="$(apk add --simulate --quiet "$@" 2>&1)"; rc=$?
+  if ((rc != 0)) && [[ -n "$SU" ]] && env_failure "$out"; then
+    out="$($SU apk add --simulate --quiet "$@" 2>&1)"; rc=$?
+  fi
+  printf '%s' "$out"
+  return "$rc"
+}
+
+# Turn a lock/permission failure into a clean env exit (1), the way a missing manifest
+# or empty parse already does — distinct from the drift exit (2) below.
+bail_env() {
+  bad "apk could not open its database (lock/permission), even under '${SU:-root}' — this"
+  bad "is an ENVIRONMENT failure, not package drift. Run as root, or configure doas/sudo:"
+  printf '%s\n' "$1" | grep -iE 'ERROR|denied' | head -3 | sed 's/^/    /' >&2
+  exit 1
+}
 
 # ── resolution ────────────────────────────────────────────────────────────────
 # Bulk first, then per-name — the same bulk-then-retry shape as bootstrap.sh's
 # apk_install, and for the same reason. The bulk pass proves something no per-name
 # probe can: that the whole set is CO-INSTALLABLE (no two names conflict).
 missing=()
-if sim "${pkgs[@]}" >/dev/null 2>&1; then
+# Capture output and status in separate statements: `out=$(...)` does set $? to the
+# command's status, but that is easy to break with any later edit that inserts a
+# statement between the two. Assign, then read $? on its own line.
+bulk_out="$(sim "${pkgs[@]}")"; bulk_rc=$?
+if ((bulk_rc == 0)); then
   ok "all ${#pkgs[@]} names resolve, and the set is co-installable."
+elif env_failure "$bulk_out"; then
+  bail_env "$bulk_out"
 else
   bad "the bulk resolve failed — narrowing down per package"
   for p in "${pkgs[@]}"; do
-    # Capture output and status in separate statements: `out=$(...)` does set $? to the
-    # command's status, but that is easy to break with any later edit that inserts a
-    # statement between the two. Test the call directly instead.
-    if out="$(sim "$p")"; then continue; fi
+    out="$(sim "$p")" && continue
+    env_failure "$out" && bail_env "$out"
     case "$out" in
     *"no such package"*)            missing+=("$p — absent from ${branch:-this branch}") ;;
     *"unable to select packages"*)  missing+=("$p — unsatisfiable (conflict or missing dependency)") ;;
