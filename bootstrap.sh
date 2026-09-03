@@ -197,11 +197,11 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
 # ordering this block would build a binary nothing would ever run.
 
 # _dotfiles_ver_lt <a> <b> — true when version a sorts BELOW version b.
-# Field-wise integer compare, mirroring core/scripts/verify-atuin-guard.sh's
-# ver_cmp: no `sort -V` (GNU-only; Alpine ships busybox sort) and no string
-# compare, which would wrongly rank 0.26.10 below 0.26.9. Non-numeric or missing
-# fields read as 0, so a pre-release suffix degrades to "build it" rather than
-# to a parse error.
+# Field-wise integer compare, mirroring ver_cmp in dotfiles-core's
+# scripts/research/verify-atuin-guard.sh (not vendored here): no `sort -V`
+# (GNU-only; Alpine ships busybox sort) and no string compare, which would
+# wrongly rank 0.26.10 below 0.26.9. Non-numeric or missing fields read as 0, so
+# a pre-release suffix degrades to "build it" rather than to a parse error.
 _dotfiles_ver_lt() { # <a> <b>
   local i x y
   local -a A B
