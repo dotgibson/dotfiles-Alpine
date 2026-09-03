@@ -1,0 +1,72 @@
+# .github/workflows/test.yml
+# Run this repo's own suite (test/) — the fleet test floor (dotgibson/dotfiles-core#691).
+#
+# WHY A THIRD WORKFLOW, when lint.yml and bootstrap.yml already exist:
+#
+#   • lint.yml calls Core's reusable shell gate — shellcheck, bash -n, zsh -n,
+#     markdownlint, gitleaks. It says nothing about install/packages.txt's CONTENTS.
+#   • bootstrap.yml calls Core's reusable bootstrap test, whose packages_check leg
+#     resolves every name with `apk info`. That is an INDEX lookup; test/check-packages.sh
+#     asks the same question through `apk add --simulate`, which runs apk's real resolver
+#     — so it also sees single-provider virtuals and `provides=` names the index form
+#     misses, and it is the check this repo owns rather than one Core runs on its behalf.
+#
+# The floor is "a suite exists AND CI runs it". The suite landed with the vocabulary; this
+# is the half that was missing, and Core's `make fleet-vocabulary` register reported this
+# repo as `not-in-ci` until it existed — the one red cell left in the fleet.
+#
+# A CONTAINER, NOT ubuntu-latest, and that is the whole point. test/check-packages.sh exits
+# 0 with a stated skip when there is no `apk` on the host ("run this on Alpine, or in CI").
+# On a plain runner this lane would therefore be green while asserting NOTHING — precisely
+# the failure the floor exists to prevent. The image matches bootstrap.yml's, so both lanes
+# answer for the same Alpine branch.
+#
+# `apk update` is load-bearing, for the reason bootstrap.yml records about its own prep:
+# `apk add --simulate` resolves against the LOCAL index, and a base image ships none. Skip
+# it and every name reports unresolved — a false red on the whole list rather than a real
+# signal. `make` and `bash` are installed because the base image has neither (busybox is
+# not bash, and the suite's scripts are `#!/usr/bin/env bash`); `git` so actions/checkout
+# uses git rather than falling back to the REST API tarball.
+#
+# THROUGH `make test`, not the script path, so the canonical verb is what CI exercises: if
+# the Makefile target ever stops running the suite, this lane notices instead of sailing
+# past it. That is also what makes the register's floor column true rather than incidental.
+#
+# NO `paths:` FILTER, for the reason lint.yml and bootstrap.yml both record: a required
+# status check that does not run is not "skipped" to a ruleset — it stays PENDING and
+# blocks the PR forever. This lane is a container pull and ~70 resolves; it can afford to
+# run every time.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: test/ suite (alpine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: alpine:3.24
+    steps:
+      # BEFORE checkout, deliberately: the action needs `git` in the container to clone,
+      # and the suite needs bash + make to run at all.
+      - name: Prep the container
+        run: apk add --no-cache bash make git && apk update
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: make test
+        run: make test
