@@ -23,22 +23,34 @@ ZSH_FILES := $(shell git ls-files '*.zsh' ':!:core/**')
 # Identical to the reusable gate's env, so a local pass means a CI pass.
 export SHELLCHECK_OPTS := -e SC1090 -e SC1091 -e SC2015 -e SC2088
 
-.PHONY: help check shell zsh actions md secrets verify-core dry-run hooks capabilities
+# The canonical fleet `make` vocabulary (dotfiles-core#691): every repo that vendors
+# Core answers to the SAME verbs — help, lint, check, dry-run, packages-check,
+# core-verify, test — so a contributor moving between OS repos never has to relearn the
+# buttons. Where this repo already had a name (verify-core), the historical spelling is
+# kept as a .PHONY alias rather than deleted. See VENDORING.md, "The `make` vocabulary,
+# and the test floor", in Core.
+.PHONY: help lint check shell zsh actions md secrets packages-check core-verify verify-core dry-run test hooks capabilities
 
 help:
 	@echo 'dotfiles-Alpine — local gates (mirror of CI)'
 	@echo ''
-	@echo '  make check        every gate below, in order'
-	@echo '  make shell        shellcheck + bash -n on repo-owned *.sh'
-	@echo '  make zsh          zsh -n on repo-owned *.zsh (incl. zsh/zshenv.zsh)'
-	@echo '  make actions      actionlint on .github/workflows'
-	@echo '  make md           markdownlint-cli2 on tracked markdown'
-	@echo '  make secrets      gitleaks over the working tree'
-	@echo '  make verify-core  is the vendored core/ still pristine vs core.lock?'
-	@echo '  make dry-run      preview the bootstrap wiring; change nothing'
-	@echo '  make hooks        install the pre-commit hooks'
+	@echo '  make lint           shellcheck + zsh -n + actionlint + markdown + secrets (== CI lint gate)'
+	@echo '  make check          lint + the capability-schema gate; the full local sweep'
+	@echo '  make test           run the test/ suite (currently: packages-check)'
+	@echo '  make packages-check  do all install/packages.txt names resolve on this Alpine branch?'
+	@echo '  make dry-run        preview the bootstrap wiring; change nothing'
+	@echo '  make core-verify    is the vendored core/ still pristine vs core.lock?'
+	@echo ''
+	@echo '  individual lint legs: shell, zsh, actions, md, secrets, capabilities'
+	@echo '  make hooks          install the pre-commit hooks'
 
-check: shell zsh actions md secrets capabilities
+# The reusable CI gate's legs, in one word. lint.yml calls dotfiles-core's
+# lint-call.yml, which runs exactly shell + zsh + actionlint + markdown + gitleaks over
+# the repo-owned tree; a green `make lint` here means a green lint check on the PR.
+lint: shell zsh actions md secrets
+	@echo '✓ lint clean'
+
+check: lint capabilities
 	@echo '✓ all local gates passed'
 
 shell:
@@ -93,12 +105,35 @@ secrets:
 # produce a lock that disagrees with the fleet. The header is an upstream doc bug.
 CORE_REPO ?= ../dotfiles-core
 
-verify-core:
+core-verify:
 	@[ -x "$(CORE_REPO)/scripts/core-integrity.sh" ] || { \
 	    echo '- no dotfiles-core checkout at $(CORE_REPO) — SKIP'; \
-	    echo '  (clone it beside this repo, or: make verify-core CORE_REPO=/path/to/dotfiles-core)'; \
+	    echo '  (clone it beside this repo, or: make core-verify CORE_REPO=/path/to/dotfiles-core)'; \
 	    exit 0; }; \
 	  "$(CORE_REPO)/scripts/core-integrity.sh" --self "$(CURDIR)"
+
+# Historical spelling, kept so `make verify-core` still works. The canonical fleet verb
+# is core-verify (dotfiles-core#691); this is a one-line alias, not a second copy.
+verify-core: core-verify
+
+# Does every apk name in install/packages.txt still resolve on this branch? Installs
+# nothing — see the header of the script for why `apk add --simulate` is the right probe.
+# This is the smallest useful member of the test/ suite below.
+packages-check:
+	@./test/check-packages.sh install/packages.txt
+
+# The fleet test floor (dotfiles-core#691): a real suite under test/, run here. Every
+# executable script in test/ runs; today that is just check-packages.sh, but new checks
+# drop in without touching this target. `test` is a canonical verb with no stub form —
+# a `test:` that ran nothing would read as no-op in Core's register.
+test:
+	@rc=0; found=0; \
+	for t in test/*.sh; do \
+	  [ -e "$$t" ] || continue; found=1; \
+	  echo ":: $$t"; "$$t" || rc=1; \
+	done; \
+	if [ "$$found" -eq 0 ]; then echo '!! test/ has no *.sh — the fleet test floor requires at least one'; rc=1; fi; \
+	[ $$rc -eq 0 ] && echo '✓ test suite passed'; exit $$rc
 
 dry-run:
 	@./bootstrap.sh --dry-run
