@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   test:
-    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v6
+    uses: dotgibson/dotfiles-core/.github/workflows/bootstrap-test.yml@v7
     with:
       image: alpine:3.24
       # `&& apk update` is for packages-check, and it is load-bearing there. That job
