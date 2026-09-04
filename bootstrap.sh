@@ -102,6 +102,27 @@ source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
+# ── PATH prelude: make the presence guards below tell the TRUTH ───────────────
+# bootstrap runs in BASH, before any Core shell exists, so the user-local bindirs the
+# installs below WRITE INTO are not on PATH yet — ~/.local/bin, ~/.cargo/bin and GOBIN
+# reach PATH only via core/zsh/00-tools.zsh and os/alpine.zsh, i.e. only inside a Core
+# zsh. Every `command -v <tool>` guard in this script was therefore answered by the PATH
+# of whatever shell launched it, and on a fresh box that is bash with none of them.
+#
+# That is not a tidiness point here. mise.run drops its binary in ~/.local/bin, so the
+# bare `command -v mise` in _dotfiles_go_install was FALSE for the mise this script had
+# installed moments earlier — both arms of the Go fallback missed and the else branch
+# announced "needs Go" on a box that had one. openSUSE shipped exactly that and exited 2
+# on every bootstrap (dotgibson/dotfiles-core#748); here it stayed invisible only because
+# `go` is in install/packages.txt and arm 1 always won. Drop that package and this repo
+# loses tools silently, with a green CI.
+#
+# blib_user_bindirs_on_path is Core's helper for precisely this, resolving CARGO_HOME and
+# GOBIN/GOPATH rather than hard-coding them (core/lib/bootstrap-lib.sh). It adds only
+# directories that EXIST, so it is called AGAIN inside provision() once the installers
+# have created them — see there.
+blib_user_bindirs_on_path
+
 # Apply any --only/--skip module selection now the validator (blib_select) exists;
 # it aborts on a malformed selector or an unknown group.
 if ((ONLY_SEEN)); then blib_select --only "$ONLY_RAW"; fi
@@ -223,9 +244,10 @@ _dotfiles_ver_lt() { # <a> <b>
 }
 
 # _dotfiles_ts_meets_floor <floor> — true when SOME already-installed tree-sitter
-# clears <floor>. Checks the PATH binary AND ~/.cargo/bin explicitly, because
-# provision() runs BEFORE wire_links(), so ~/.cargo/bin is not on this shell's
-# PATH yet — the same two-part guard the yazi block above relies on. A binary
+# clears <floor>. Checks the PATH binary AND ~/.cargo/bin explicitly, because the
+# PATH prelude adds only directories that already exist — on a box whose first cargo
+# build happens in THIS run, ~/.cargo/bin was created after the prelude and is not on
+# this shell's PATH. The same two-part guard the yazi block above relies on. A binary
 # whose `--version` cannot be run or parsed counts as NOT meeting the floor.
 _dotfiles_ts_meets_floor() { # <floor>
   local floor="$1" cand out ver
@@ -333,6 +355,11 @@ provision() {
     blib_say "mise (official installer — musl build)"
     curl -fsSL https://mise.run | sh >/dev/null 2>&1 || true
   fi
+  # Re-run the PATH prelude: the helper adds only directories that already EXIST, and
+  # ~/.local/bin is the one mise.run may have just created. Without this second call the
+  # `command -v mise` fallback in _dotfiles_go_install below is still blind to it — the
+  # whole point of the prelude, one install too late. Idempotent by construction.
+  blib_user_bindirs_on_path
   # yazi + tree-sitter-cli: apk installs the community musl build first (packages.txt);
   # this cargo build is the fallback if apk missed it. On musl it compiles against the
   # musl target (needs build-base, in packages.txt).
@@ -347,9 +374,10 @@ provision() {
   # — so let the build talk. (Matches dotfiles-Fedora/bootstrap.sh, documented there at length.)
   #
   # The guard checks ~/.cargo/bin/yazi as well as PATH, and that second test is what makes
-  # --force safe: `provision` runs BEFORE `wire_links`, so ~/.cargo/bin is not on this shell's
-  # PATH yet (the zsh layer is what prefixes it). On PATH alone, a box that already built yazi
-  # here would fail `command -v` and --force would rebuild it from source on EVERY bootstrap.
+  # --force safe: the PATH prelude adds only directories that already exist, so on a box
+  # whose first cargo build is in THIS run ~/.cargo/bin was created after it. On PATH alone,
+  # a box that already built yazi here would fail `command -v` and --force would rebuild it
+  # from source on EVERY bootstrap.
   # Same two-part guard dotfiles-Offense already uses.
   if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
     blib_say "yazi (cargo build from source — slow on musl, output below)"
