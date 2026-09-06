@@ -41,6 +41,13 @@ GIT_LS_OK := $(shell git ls-files >/dev/null 2>&1 && echo ok)
 # Used by every target whose work is driven by one of the lists above. Refuses rather than
 # skips, in the same spirit as md's "refusing to lint unpinned" below: a lint that cannot
 # see the files must not look like a lint that found nothing wrong.
+#
+# It goes on its OWN recipe line, FIRST — ahead of each target's "is the linter installed?"
+# probe. Ordering it after that probe makes the guard unreachable exactly where it matters
+# most: a container without zsh answered `- zsh not installed — SKIP` and exited 0 with git
+# thoroughly broken, so the target could not fail no matter what git did. Caught by
+# test/check-lint-guard.sh on the alpine lane, which is the gate doing its job. A broken git
+# is an environment fault and does not become less true because a linter is also absent.
 GIT_GUARD = [ -n "$(GIT_LS_OK)" ] || { \
 	  printf '%s\n' \
 	    '!! `git ls-files` FAILED — the repo-owned file lists are EMPTY, so this target' \
@@ -87,17 +94,16 @@ check: lint capabilities
 	@echo '✓ all local gates passed'
 
 shell:
+	@$(GIT_GUARD)
 	@command -v shellcheck >/dev/null 2>&1 || { echo '- shellcheck not installed — SKIP'; exit 0; }; \
-	  $(GIT_GUARD); \
 	  [ -n "$(SH_FILES)" ] || { echo '- no repo-owned *.sh'; exit 0; }; \
 	  echo ':: shellcheck $(SH_FILES)'; shellcheck $(SH_FILES)
-	@$(GIT_GUARD); \
-	  [ -n "$(SH_FILES)" ] || exit 0; \
+	@[ -n "$(SH_FILES)" ] || exit 0; \
 	  for f in $(SH_FILES); do echo ":: bash -n $$f"; bash -n "$$f" || exit 1; done
 
 zsh:
+	@$(GIT_GUARD)
 	@command -v zsh >/dev/null 2>&1 || { echo '- zsh not installed — SKIP'; exit 0; }; \
-	  $(GIT_GUARD); \
 	  [ -n "$(ZSH_FILES)" ] || { echo '- no repo-owned *.zsh'; exit 0; }; \
 	  for f in $(ZSH_FILES); do echo ":: zsh -n $$f"; zsh -n "$$f" || exit 1; done
 
