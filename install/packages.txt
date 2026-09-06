@@ -90,7 +90,14 @@ difftastic     # structural git diff (difft) — gated by Core on HAVE_DIFFT
 ast-grep       # AST-aware structural search/rewrite (`ast-grep`) — gated by Core on HAVE_ASTGREP
 
 # ── editor + git workflow ─────────────────────────────────────
-neovim
+neovim         # min:0.12.0 — nvim-treesitter (core/nvim, pinned to `main`) will not load
+               # below this. apk resolves `neovim` on every branch but only CLEARS the
+               # floor on two: v3.21 0.10.4, v3.22 0.11.1, v3.23 0.11.7 are all below it;
+               # v3.24 (0.12.2) and edge are above. Same shape as tree-sitter-cli below,
+               # and the two are one requirement — see bootstrap.sh's NEOVIM_FLOOR, which
+               # WARNS on a short box rather than failing: unlike Debian/Gentoo there is
+               # no lever here (no newer branch without moving the box, and upstream's
+               # AppImages are glibc). This floor is declarative, not enforced by CI.
 git            # `git subtree` ships with git on Alpine (no separate package)
 openssh-client-default # ssh / ssh-keygen / ssh-agent — bare `openssh-client` is now
                # only a virtual `provides`; the -default variant is the real package
