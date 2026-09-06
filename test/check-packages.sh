@@ -21,11 +21,24 @@
 #     virtuals resolve, unknown names error. It is the Alpine analogue of Debian's
 #     `apt-get install -s`.
 #
-# There is deliberately NO version-floor check here (unlike the Debian sibling). Alpine
-# carries no `# min:X.Y.Z` floors in install/packages.txt: the one floor that matters,
-# tree-sitter-cli's, lives in bootstrap.sh as TREESITTER_FLOOR and is enforced there by
-# a version guard, precisely because apk resolves the name on every branch but only
-# clears the floor on some (see install/packages.txt). Resolution is the whole check.
+# There is deliberately NO version-floor check here (unlike the Debian sibling), even
+# though install/packages.txt now DECLARES one (`neovim  # min:0.12.0`). That floor is
+# declarative — it feeds Core's generated PORTING-MATRIX cell and the availability
+# routines — and the enforcement lives in bootstrap.sh, as NEOVIM_FLOOR beside
+# TREESITTER_FLOOR, precisely because apk resolves these names on every branch but only
+# clears their floors on some (see install/packages.txt). Resolution is the whole check.
+#
+# Enforcing floors HERE would be worse than not enforcing them, and it is worth being
+# explicit about why. This gate runs against whatever branch the box tracks, and CI pins
+# a single one (alpine:3.24, .github/workflows/test.yml) — the newest supported branch,
+# where every declared floor is already met. A floor check would therefore go green on
+# 3.24 while v3.21/v3.22/v3.23 boxes stay broken, which is the exact blind spot Core's
+# PORTING-MATRIX footnote 33 warns about: a check that samples only the newest lane
+# reports every lane healthy. Green here would mean less than silence.
+#
+# The honest gate is per-branch. Until this runs across the supported branch matrix, a
+# declared floor is documentation plus a bootstrap warning, and this script says so
+# rather than pretending to check it.
 #
 # RUN IT WHERE THE ANSWER IS TRUE. Availability is a property of the apk repositories on
 # the box, so v3.21 and edge disagree by design (gron, yazi and friends landed in
