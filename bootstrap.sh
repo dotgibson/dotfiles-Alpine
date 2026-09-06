@@ -130,7 +130,27 @@ if ((SKIP_SEEN)); then blib_select --skip "$SKIP_RAW"; fi
 
 # ── privilege tool: Alpine defaults to doas, not sudo. Use nothing if root. ─────
 # BLIB_SU hands the same escalator to bootstrap-lib (blib_set_login_shell).
-if [[ "$(id -u)" -eq 0 ]]; then
+#
+# $EUID, NOT `[[ "$(id -u)" -eq 0 ]]` (dotgibson/dotfiles-core#867). That form is an
+# ARITHMETIC comparison, and bash evaluates an EMPTY string as 0 — so on a box where `id`
+# is missing or off PATH it concluded "we are root", set SU="" and ran the entire provision
+# unescalated. Every `doas apk add` in this run then executes as the invoking user and
+# fails, or worse, half-succeeds. Demonstrated:
+#
+#   $ bash -c 'id() { :; }; [[ "$(id -u)" -eq 0 ]] && echo "WE ARE ROOT ($(whoami))"'
+#   WE ARE ROOT (someuser)
+#
+# $EUID is a bash BUILTIN: no PATH lookup, no fork, cannot be shadowed. The string compare
+# is what keeps an empty value from reading as zero.
+#
+# WHY NOT blib_resolve_su YET, which is Core's answer to exactly this and what the rest of
+# the fleet is moving to: it resolved sudo BEFORE doas, which would invert the doas-first
+# fact os/alpine.capabilities exists to declare — including on the rare Alpine box that has
+# sudo too. Core gained `--prefer` for that (dotfiles-core#879), but this file sources the
+# VENDORED core/lib/bootstrap-lib.sh, so the flag is not available here until the next sync.
+# This fix is deliberately independent of that cycle: the unescalated-provision bug should
+# not wait on a release. The adoption follows, and #867 tracks it.
+if [[ "$EUID" == "0" ]]; then
   SU=""
 elif command -v doas >/dev/null 2>&1; then
   SU="doas"
