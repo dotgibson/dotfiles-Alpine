@@ -45,12 +45,15 @@ atuin          # shell history (in Alpine repos — no installer needed)
 # listed anyway: it resolves on all five branches and is the right build on the two where
 # it clears. The version guard is what covers the three older branches — a presence guard
 # would see apk's 0.25.10, skip the build, and leave the box below the floor in silence.
-# The floor lives in one place: TREESITTER_FLOOR in bootstrap.sh.
+# The floor's authoritative VALUE lives in one place — TREESITTER_FLOOR in bootstrap.sh.
+# The `# min:` below restates it so the per-branch gate and Core's generated matrix can
+# both read it; test/check-packages.sh asserts the two agree, so the copy cannot drift.
 starship       # prompt (musl build in community; official installer kept as fallback)
-yazi           # file manager (community; cargo build kept as fallback). In `community`
-               # only since v3.22 — NOT on v3.21 (supported to 2026-11-01), where this
+yazi           # since:v3.22 — file manager (community; cargo build kept as fallback). In
+               # `community` only since v3.22 — NOT on v3.21 (supported to 2026-11-01), where this
                # name is the one that aborts the bulk `apk add` (see the retry note below)
-tree-sitter-cli  # nvim parser CLI (see note above)
+tree-sitter-cli  # min:0.26.1 — nvim parser CLI (see note above). Clears the floor only on
+               # v3.24 (0.26.7-r0) and edge; v3.21/v3.22/v3.23 resolve but sit below it.
 viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarded)
 
 # ── modern CLI extras (core-doctor parity; community repo) ─────
@@ -68,7 +71,7 @@ viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarde
 # if it hasn't landed) is skipped per-package, never fatal.
 dust           # du (dust)
 procs          # ps
-gron           # greppable JSON. In `community` only since v3.23 — NOT on v3.21 or v3.22
+gron           # since:v3.23 — greppable JSON. In `community` only since v3.23 — NOT on v3.21 or v3.22
                # (supported to 2026-11-01 / 2027-05-01). Not a rename and not a drop: it
                # was promoted from `testing` later, so leave the name alone. On those two
                # branches gron (and yazi) fail the bulk `apk add`, and apk_install() falls

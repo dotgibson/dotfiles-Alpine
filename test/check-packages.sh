@@ -21,24 +21,40 @@
 #     virtuals resolve, unknown names error. It is the Alpine analogue of Debian's
 #     `apt-get install -s`.
 #
-# There is deliberately NO version-floor check here (unlike the Debian sibling), even
-# though install/packages.txt now DECLARES one (`neovim  # min:0.12.0`). That floor is
-# declarative — it feeds Core's generated PORTING-MATRIX cell and the availability
-# routines — and the enforcement lives in bootstrap.sh, as NEOVIM_FLOOR beside
-# TREESITTER_FLOOR, precisely because apk resolves these names on every branch but only
-# clears their floors on some (see install/packages.txt). Resolution is the whole check.
+# VERSION FLOORS ARE CHECKED, per branch. A name resolving is not the whole story for a
+# floored entry: apk resolves `neovim` and `tree-sitter-cli` on all five branches and
+# clears their `# min:` floors on only two. Those are different facts and this gate
+# reports both.
 #
-# Enforcing floors HERE would be worse than not enforcing them, and it is worth being
-# explicit about why. This gate runs against whatever branch the box tracks, and CI pins
-# a single one (alpine:3.24, .github/workflows/test.yml) — the newest supported branch,
-# where every declared floor is already met. A floor check would therefore go green on
-# 3.24 while v3.21/v3.22/v3.23 boxes stay broken, which is the exact blind spot Core's
-# PORTING-MATRIX footnote 33 warns about: a check that samples only the newest lane
-# reports every lane healthy. Green here would mean less than silence.
+# It did not always. The floors used to be enforced nowhere, on a stated rationale worth
+# recording because it was correct at the time: this gate ran against whatever branch the
+# box tracked, and CI pinned exactly one — alpine:3.24, the newest supported branch, where
+# every floor is already met. A floor check there would have gone green while v3.21,
+# v3.22 and v3.23 boxes stayed broken. That is the blind spot Core's PORTING-MATRIX
+# footnote 33 names: a check sampling only the newest lane reports every lane healthy.
+# Green would have meant less than silence.
 #
-# The honest gate is per-branch. Until this runs across the supported branch matrix, a
-# declared floor is documentation plus a bootstrap warning, and this script says so
-# rather than pretending to check it.
+# The fix was not to weaken the check but to stop sampling one lane —
+# .github/workflows/packages.yml now runs this across v3.21…edge. Three tiers, because a
+# gate that cannot distinguish them is the useless kind:
+#
+#   • an unexpected name absence          → FAIL (exit 2). Real drift.
+#   • a floor unmet on EDGE               → FAIL (exit 3). Unsatisfiable fleet-wide:
+#                                           Core's pin outran the ecosystem.
+#   • a floor unmet on a STABLE branch    → REPORT. Known, documented, and unfixable by
+#                                           apk on that branch; bootstrap.sh warns on the
+#                                           box itself. Failing would be permanent red
+#                                           that no one can act on.
+#
+# The manifest carries the per-branch expectations that make this possible:
+#
+#   <name>  # since:vX.YY   — absent before branch X.YY BY RECORD, so absence at or below
+#                             it is not drift. Probed anyway: a name arriving early is
+#                             news (a backport) and is reported so the annotation is
+#                             corrected while it is cheap.
+#   <name>  # min:X.Y.Z     — a version floor. Its authoritative value lives in
+#                             bootstrap.sh; this script asserts the two agree, so the
+#                             restatement cannot silently drift.
 #
 # RUN IT WHERE THE ANSWER IS TRUE. Availability is a property of the apk repositories on
 # the box, so v3.21 and edge disagree by design (gron, yazi and friends landed in
@@ -46,9 +62,10 @@
 # test against whatever branch you track; the authoritative run is on a pinned Alpine.
 #
 # Exit codes:
-#   0  every name resolves (or a clean skip: no apk on this host)
-#   1  usage/environment failure
+#   0  every expected name resolves and every declared floor is met (or clean skip: no apk)
+#   1  usage/environment failure, or a floor that disagrees with bootstrap.sh
 #   2  one or more names did NOT resolve — the drift signal
+#   3  a declared floor is unmet on edge — unsatisfiable fleet-wide
 #
 # Usage:
 #   test/check-packages.sh                      # install/packages.txt
@@ -88,13 +105,121 @@ else
   exit 1
 fi
 
-# Name the branch so a local run's answer is interpretable.
+# ── which branch are we on? ───────────────────────────────────────────────────
+# Two questions, not one: the human-readable label, and a COMPARABLE key for the
+# `# since:` / `# min:` expectations below.
+#
+# edge must be detected from /etc/apk/repositories, not from VERSION_ID. An edge box
+# reports the NEXT release it is heading toward (e.g. 3.25.0_alpha…), so parsing the
+# version alone silently classifies edge as some future stable branch and every
+# expectation keyed to it reads wrong.
 branch="$(sed -n 's/^VERSION_ID=//p' /etc/os-release 2>/dev/null | head -1 | tr -d "\"'")"
-say "Alpine branch in view: ${branch:-unknown}"
+if grep -qE '/edge/' /etc/apk/repositories 2>/dev/null; then
+  branch_key="edge"; branch_label="edge (${branch:-?})"
+else
+  # v3.24.1 → 3.24. Two components: expectations are per BRANCH, not per point release.
+  branch_key="$(printf '%s' "${branch:-}" | awk -F. 'NF>=2 { print $1 "." $2 }')"
+  branch_label="v${branch_key:-?} (${branch:-unknown})"
+fi
+say "Alpine branch in view: $branch_label"
 
-mapfile -t pkgs < <(blib_read_pkgs "$manifest")
-((${#pkgs[@]})) || { bad "$manifest parsed to zero package names"; exit 1; }
-say "$manifest — ${#pkgs[@]} names"
+# _branch_lt <a> <b> — true when branch a is OLDER than b. Both are "3.21"-style keys or
+# the literal "edge", which sorts above every numbered branch. Field-wise integer
+# compare, not string: "3.9" must not outrank "3.21".
+_branch_lt() { # <a> <b>
+  local a="${1#v}" b="${2#v}"
+  [[ "$a" == "$b" ]] && return 1
+  [[ "$a" == "edge" ]] && return 1   # edge is never older than anything
+  [[ "$b" == "edge" ]] && return 0   # anything numbered is older than edge
+  local am="${a%%.*}" bm="${b%%.*}" an="${a#*.}" bn="${b#*.}"
+  ((10#${am:-0} < 10#${bm:-0})) && return 0
+  ((10#${am:-0} > 10#${bm:-0})) && return 1
+  ((10#${an:-0} < 10#${bn:-0}))
+}
+
+# _ver_lt <a> <b> — version compare for `# min:` floors, field-wise so 0.26.10 does not
+# rank below 0.26.9. Deliberately the same shape as bootstrap.sh's _dotfiles_ver_lt; a
+# pre-release/`-rN` suffix is truncated at the first '-' rather than parsed.
+_ver_lt() { # <a> <b>
+  local i x y; local -a A B; local IFS=.
+  # shellcheck disable=SC2206  # deliberate word-splitting on IFS=. — that IS the parse
+  A=(${1%%-*})
+  # shellcheck disable=SC2206
+  B=(${2%%-*})
+  unset IFS
+  for ((i = 0; i < 4; i++)); do
+    x="${A[i]:-0}"; y="${B[i]:-0}"
+    [[ "$x" =~ ^[0-9]+$ ]] || x=0
+    [[ "$y" =~ ^[0-9]+$ ]] || y=0
+    ((10#$x < 10#$y)) && return 0
+    ((10#$x > 10#$y)) && return 1
+  done
+  return 1 # equal is NOT below a >= floor
+}
+
+# ── the manifest's per-branch expectations ────────────────────────────────────
+# blib_read_pkgs gives the NAMES apk would really be fed; it strips comments, which is
+# right for it and useless here. This second pass reads the annotations those comments
+# carry, so the two views cannot disagree about which names exist:
+#
+#   <name>  # since:vX.YY   — not in the repos before branch X.YY. Absence at or below
+#                             that branch is EXPECTED, not drift.
+#   <name>  # min:X.Y.Z     — nvim-treesitter-style version floor. The name resolving is
+#                             not enough; the version has to clear the floor.
+declare -A PKG_SINCE=() PKG_MIN=()
+while IFS= read -r line; do
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+  name="${line%%#*}"; name="${name//[[:space:]]/}"
+  [[ -n "$name" ]] || continue
+  cmt="${line#*#}"
+  [[ "$cmt" == "$line" ]] && continue          # no inline comment on this line
+  [[ "$cmt" =~ since:(v?[0-9]+\.[0-9]+|edge) ]] && PKG_SINCE["$name"]="${BASH_REMATCH[1]#v}"
+  [[ "$cmt" =~ min:([0-9][0-9.]*) ]] && PKG_MIN["$name"]="${BASH_REMATCH[1]}"
+done <"$manifest"
+
+mapfile -t all_pkgs < <(blib_read_pkgs "$manifest")
+((${#all_pkgs[@]})) || { bad "$manifest parsed to zero package names"; exit 1; }
+say "$manifest — ${#all_pkgs[@]} names"
+
+# Split by branch expectation. A name annotated `# since:vX.YY` is NOT required to
+# resolve on an older branch — that is the manifest describing reality, not drift, and
+# failing on it would make this gate permanently red on v3.21 for yazi and gron. They
+# are still PROBED below, because a name appearing EARLIER than recorded is real news
+# (a backport, or a promotion out of `testing`) and the annotation should then be
+# corrected. News is reported; it is not a failure.
+pkgs=(); deferred=()
+for p in "${all_pkgs[@]}"; do
+  since="${PKG_SINCE[$p]:-}"
+  if [[ -n "$since" ]] && _branch_lt "${branch_key:-0.0}" "$since"; then
+    deferred+=("$p")
+  else
+    pkgs+=("$p")
+  fi
+done
+if ((${#deferred[@]})); then
+  say "${#deferred[@]} name(s) not expected on this branch (checked separately): ${deferred[*]}"
+fi
+((${#pkgs[@]})) || { bad "every name is deferred on this branch — the manifest cannot be right"; exit 1; }
+
+# ── the floors must agree with bootstrap.sh ───────────────────────────────────
+# A `# min:` here restates a constant whose authoritative value lives in bootstrap.sh, so
+# the copy can drift the moment someone bumps one and not the other — and a stale floor
+# is worse than no floor, because it reads as verified. Assert the two agree, in the same
+# spirit as check-root-probe.sh: a duplicated fact is only safe if something checks it.
+declare -A FLOOR_SOURCE=([tree-sitter-cli]=TREESITTER_FLOOR [neovim]=NEOVIM_FLOOR)
+for p in "${!FLOOR_SOURCE[@]}"; do
+  var="${FLOOR_SOURCE[$p]}"
+  want="$(sed -n "s/^${var}=\"\([^\"]*\)\".*/\1/p" bootstrap.sh | head -1)"
+  have="${PKG_MIN[$p]:-}"
+  [[ -n "$want" ]] || { bad "bootstrap.sh no longer defines $var — this gate's floor for $p is unanchored"; exit 1; }
+  [[ -n "$have" ]] || { bad "install/packages.txt dropped the '# min:' on $p, but bootstrap.sh still sets $var=$want"; exit 1; }
+  [[ "$have" == "$want" ]] || {
+    bad "floor disagreement on $p: install/packages.txt says min:$have, bootstrap.sh says $var=$want"
+    bad "One of the two was bumped without the other. They must match."
+    exit 1
+  }
+done
 
 # apk resolves against the cached index; a box that never ran `apk update` has none.
 if [[ -z "$(ls -A /var/cache/apk 2>/dev/null)" && ! -s /lib/apk/db/installed ]]; then
@@ -143,7 +268,7 @@ bail_env() {
 # Bulk first, then per-name — the same bulk-then-retry shape as bootstrap.sh's
 # apk_install, and for the same reason. The bulk pass proves something no per-name
 # probe can: that the whole set is CO-INSTALLABLE (no two names conflict).
-missing=()
+missing=() news=() met=() below=()
 # Capture output and status in separate statements: `out=$(...)` does set $? to the
 # command's status, but that is easy to break with any later edit that inserts a
 # statement between the two. Assign, then read $? on its own line.
@@ -183,5 +308,81 @@ EOF
   exit 2
 fi
 
-ok "all ${#pkgs[@]} names resolve on ${branch:-this branch}."
+ok "all ${#pkgs[@]} names resolve on $branch_label."
+
+# ── deferred names: did any land EARLY? ───────────────────────────────────────
+# Not a failure in either direction. Absent is what the annotation predicted; present
+# means the package moved and the annotation is now stale, which someone should fix
+# while it is cheap.
+for p in "${deferred[@]}"; do
+  if sim "$p" >/dev/null 2>&1; then
+    news+=("$p resolves on $branch_label, but is annotated 'since:v${PKG_SINCE[$p]}' — the annotation is stale")
+  fi
+done
+
+# ── declared version floors ───────────────────────────────────────────────────
+# Resolution is not the whole story for a floored name: apk resolves tree-sitter-cli and
+# neovim on every branch and clears their floors on only two. This is the check that
+# distinguishes those two facts, per branch, which is the entire reason this gate runs
+# as a matrix instead of once on the newest image.
+#
+# `apk search -x -e` is right HERE and wrong for resolution: it matches the index's NAME
+# field only, so it misses provides-names (the reason the resolution pass above uses
+# --simulate) — but floored names are real packages, and it is the only probe that
+# reports a VERSION rather than a yes/no.
+pkg_version() { # <name> → prints upstream version, or nothing
+  local out; out="$(apk search -x -e "$1" 2>/dev/null | head -1)" || return 1
+  [[ -n "$out" ]] || return 1
+  out="${out#"$1"-}"      # neovim-0.12.2-r0 → 0.12.2-r0
+  printf '%s' "${out%-r*}" # → 0.12.2
+}
+
+floor_fail=()
+for p in "${!PKG_MIN[@]}"; do
+  floor="${PKG_MIN[$p]}"
+  # A deferred name has no version to read on this branch; its absence is already
+  # accounted for above.
+  [[ " ${deferred[*]} " == *" $p "* ]] && continue
+  have="$(pkg_version "$p")" || {
+    floor_fail+=("$p — declares min:$floor but no version could be read from the index")
+    continue
+  }
+  if _ver_lt "$have" "$floor"; then
+    if [[ "$branch_key" == "edge" ]]; then
+      # edge is where a fix must exist. Below the floor HERE means the requirement is
+      # unsatisfiable anywhere in the fleet — Core's pin outran the ecosystem, or the
+      # package regressed. That is a real failure, not a known-old branch.
+      floor_fail+=("$p $have is BELOW its min:$floor on edge — unsatisfiable fleet-wide")
+    else
+      below+=("$p $have < min:$floor")
+    fi
+  else
+    met+=("$p $have >= min:$floor")
+  fi
+done
+
+((${#met[@]})) && { echo; say "floors met on $branch_label:"; printf '    %s\n' "${met[@]}"; }
+if ((${#below[@]})); then
+  echo
+  say "below floor on $branch_label — expected on older branches, and NOT a failure here:"
+  printf '    %s\n' "${below[@]}"
+  say "bootstrap.sh warns on such a box (NEOVIM_FLOOR / TREESITTER_FLOOR); there is no"
+  say "apk fix on this branch, so red CI would be permanent and would mean nothing."
+fi
+
+if ((${#news[@]})); then
+  echo
+  bad "${#news[@]} stale annotation(s) — availability improved, install/packages.txt did not:"
+  printf '    %s\n' "${news[@]}" >&2
+  bad "Not fatal. Update the 'since:' annotation (and promote the package if it is now"
+  bad "available on every supported branch)."
+fi
+
+if ((${#floor_fail[@]})); then
+  echo
+  bad "${#floor_fail[@]} floor failure(s) on $branch_label:"
+  printf '    %s\n' "${floor_fail[@]}" >&2
+  exit 3
+fi
+
 exit 0
