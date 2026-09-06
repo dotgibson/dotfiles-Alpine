@@ -19,6 +19,12 @@ SHELL := /bin/sh
 # linting it here would report findings this repo is not allowed to fix.
 SH_FILES  := $(shell git ls-files '*.sh' ':!:core/**')
 ZSH_FILES := $(shell git ls-files '*.zsh' ':!:core/**')
+# Same pathspec the reusable gate's markdown leg uses, said ONCE rather than inline in
+# the recipe, so the file list and the pin sit together. The linter is PINNED to the
+# version that gate installs, read from the vendored Core pins (dotfiles-core#873).
+MD_FILES  := $(shell git ls-files '*.md' ':!:core/**')
+CORE_PINS := core/scripts/tool-versions.env
+MARKDOWNLINT_VERSION := $(shell sed -n 's/^MARKDOWNLINT_VERSION=//p' $(CORE_PINS) 2>/dev/null)
 
 # Identical to the reusable gate's env, so a local pass means a CI pass.
 export SHELLCHECK_OPTS := -e SC1090 -e SC1091 -e SC2015 -e SC2088
@@ -73,8 +79,20 @@ actions:
 # shellcheck / zsh -n never inspect. .markdownlint.jsonc has always been here; until
 # now nothing ran it (the lint workflow skipped **.md outright), so it was decoration.
 md:
-	@command -v markdownlint-cli2 >/dev/null 2>&1 || { echo '- markdownlint-cli2 not installed — SKIP'; exit 0; }; \
-	  echo ':: markdownlint-cli2'; markdownlint-cli2 $$(git ls-files '*.md' ':!:core/**')
+	@# npx AND A PIN, not a global markdownlint-cli2 (dotfiles-core#873). The probe used to
+	@# be `command -v markdownlint-cli2`, and nothing in this repo's bootstrap installs that
+	@# — so on a normal box the guard fired every time and the target never linted anything.
+	@# A local mirror of a blocking gate that always skips is not a mirror. And where the
+	@# binary DID exist it was whatever npm last put there, while the gate runs the pinned
+	@# version, so a rule that changes across a bump reds CI against a green run here.
+	@# npx needs only node, fetches the exact pinned version, and REFUSES rather than guess
+	@# if the pin is unreadable — a silently-unpinned lint is the thing being fixed.
+	@if ! command -v npx >/dev/null 2>&1; then echo '- npx not available — SKIP'; \
+	elif [ -z "$(MARKDOWNLINT_VERSION)" ]; then \
+	  echo "!! MARKDOWNLINT_VERSION unreadable from $(CORE_PINS) — refusing to lint unpinned"; exit 1; \
+	elif [ -z "$(MD_FILES)" ]; then echo '- no repo-owned .md'; \
+	else echo ':: markdownlint-cli2@$(MARKDOWNLINT_VERSION)'; \
+	  npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION) $(MD_FILES); fi
 
 # This repo is public. Core runs gitleaks at author time and in
 # its audit; nothing ran it here. GitHub push protection covers provider patterns only.
