@@ -15,7 +15,7 @@ Two classes of issue warrant a security report rather than a normal issue:
   `/etc/wsl.conf`, or the login shell. The 1Password signing key is pinned by SHA-256
   and the script fails closed on a mismatch; a way around that check is a valid report.
 
-Note that the vendored `core/` tree is **not** in scope here — it is a `git subtree`
+Note that the vendored `core/` tree is **not** in scope here — it is a vendored
 copy of [`dotfiles-core`](https://github.com/dotgibson/dotfiles-core) and is
 overwritten on the next sync. Report those upstream, where a fix can actually land.
 

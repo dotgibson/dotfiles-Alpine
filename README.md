@@ -117,7 +117,7 @@ cd ~/dotfiles-Alpine
 exec zsh
 ```
 
-`core/` is a vendored subtree and is **already present** in a clone — there is no
+`core/` is a vendored copy and is **already present** in a clone — there is no
 submodule step. Run as **root**, or as a user with **doas** (or sudo) configured
 — `bootstrap.sh` detects which to use, then provisions `apk` packages and
 symlinks Core + the Alpine layer into place.
