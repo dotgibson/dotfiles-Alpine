@@ -1,0 +1,82 @@
+# .github/workflows/packages.yml
+# install/packages.txt against EVERY supported Alpine branch, not just the newest one.
+#
+# WHY A FOURTH WORKFLOW, when test.yml already runs test/check-packages.sh:
+#
+# test.yml runs the suite once, in a digest-pinned alpine:3.24 container. That is right
+# for the branch-independent checks (check-root-probe.sh) and actively misleading for
+# this one. Package availability and version floors are properties of the apk repositories
+# on a PARTICULAR branch, and Alpine carries four supported stable branches plus edge,
+# each frozen at what it released with. v3.24 is the branch where everything is newest:
+# every name resolves and every `# min:` floor is met. A single-lane run therefore reports
+# the whole fleet healthy while v3.21, v3.22 and v3.23 boxes carry a neovim and a
+# tree-sitter-cli that nvim-treesitter will not load on.
+#
+# That is the exact blind spot Core's PORTING-MATRIX footnote 33 names — a check that
+# samples only the newest lane reports every lane healthy — and this repo was committing
+# it. The gate did not need to be stricter; it needed to stop sampling one lane.
+#
+# TAGS, NOT DIGESTS, and this is a deliberate deviation from the pinning convention that
+# test.yml and bootstrap.yml follow (and that Renovate maintains for them). Those lanes
+# pin so their result is REPRODUCIBLE. This lane exists to observe what the branches
+# carry RIGHT NOW: a pinned digest freezes the apk index along with the rootfs, so the
+# check would keep answering a question about the day it was pinned and would never
+# notice the drift it is here to catch. Same principle test/check-packages.sh states in
+# its own header — run it where the answer is true. Supply-chain exposure is bounded:
+# these are official Alpine images and nothing here builds or ships an artifact.
+#
+# fail-fast: false, because the per-branch spread IS the output. One branch failing must
+# not cancel the other four and hide whether the problem is fleet-wide or local to a lane.
+#
+# NO `paths:` FILTER, for the reason every other workflow here records: a required status
+# check that does not run stays PENDING rather than skipping, and blocks the PR forever.
+#
+# EXIT CODES (test/check-packages.sh documents these in full):
+#   2  an unexpected name absence — real drift
+#   3  a declared floor unmet on EDGE — unsatisfiable fleet-wide, Core's pin outran apk
+# A floor unmet on a stable branch is REPORTED, not failed: it is documented, bootstrap.sh
+# warns on the box itself, and no apk action can fix it there. Permanent red nobody can
+# act on is worse than a printed line somebody can.
+name: packages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  branches:
+    name: packages (${{ matrix.branch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ["3.21", "3.22", "3.23", "3.24", "edge"]
+    container:
+      image: alpine:${{ matrix.branch }}
+    steps:
+      # BEFORE checkout, deliberately, and for the reasons test.yml records: the action
+      # needs `git` in the container to clone, the script is `#!/usr/bin/env bash` and
+      # busybox is not bash, and `apk update` is load-bearing because `apk add --simulate`
+      # resolves against the LOCAL index — a base image ships none, so skipping it would
+      # report every name unresolved and turn a real signal into a false red on all 72.
+      - name: Prep the container
+        run: apk add --no-cache bash make git && apk update
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Through the canonical verb, not the script path, so that a Makefile target which
+      # stops running the check is noticed here instead of sailed past.
+      - name: make packages-check
+        run: make packages-check
