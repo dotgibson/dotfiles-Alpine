@@ -13,7 +13,7 @@
 
 ## Vendored Core
 
-- [ ] No hand-edits under `core/` (it is a subtree, overwritten on the next sync)
+- [ ] No hand-edits under `core/` (it is a vendored copy, overwritten on the next sync)
 - [ ] `make verify-core` still reports pristine, if a sync was involved
 
 ## Checks
