@@ -70,7 +70,17 @@ jobs:
       # resolves against the LOCAL index — a base image ships none, so skipping it would
       # report every name unresolved and turn a real signal into a false red on all 72.
       - name: Prep the container
-        run: apk add --no-cache bash make git && apk update
+        run: |
+          apk add --no-cache bash make git && apk update
+          # The checkout is owned by a different uid than this container's user, so git
+          # refuses to operate on it ("detected dubious ownership") — and the Makefile
+          # builds SH_FILES/ZSH_FILES/MD_FILES with `$(shell git ls-files …)` at PARSE
+          # time, so EVERY make invocation here tripped it three times. Those lists then
+          # came out empty. The Makefile now refuses rather than lint zero files, which
+          # turns that into a loud failure; this is what stops it happening in the first
+          # place. Both halves are wanted: the guard covers every other way git can fail,
+          # this covers the one we know we cause.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

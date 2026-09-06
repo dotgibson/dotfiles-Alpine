@@ -23,6 +23,33 @@ ZSH_FILES := $(shell git ls-files '*.zsh' ':!:core/**')
 # the recipe, so the file list and the pin sit together. The linter is PINNED to the
 # version that gate installs, read from the vendored Core pins (dotfiles-core#873).
 MD_FILES  := $(shell git ls-files '*.md' ':!:core/**')
+
+# Did git actually ANSWER? `$(shell ...)` swallows exit status, so a git that refused and
+# a repo that genuinely has no *.sh both arrive as the empty string — and the lint targets
+# below read empty as "nothing to do" and exit 0. That is a gate reporting a pass over
+# ZERO files, the same vacuous-green shape test/check-root-probe.sh exists to prevent.
+#
+# The trigger is real and already visible: inside a GitHub Actions container the checkout
+# is owned by a different uid, git declines with "detected dubious ownership", and every
+# containerized `make` prints that fatal three times — once per list above.
+#
+# So probe the operation itself rather than a proxy for it: run the same `git ls-files`
+# and keep its STATUS. Empty-because-broken and empty-because-empty are different facts
+# and the targets below now treat them differently.
+GIT_LS_OK := $(shell git ls-files >/dev/null 2>&1 && echo ok)
+
+# Used by every target whose work is driven by one of the lists above. Refuses rather than
+# skips, in the same spirit as md's "refusing to lint unpinned" below: a lint that cannot
+# see the files must not look like a lint that found nothing wrong.
+GIT_GUARD = [ -n "$(GIT_LS_OK)" ] || { \
+	  printf '%s\n' \
+	    '!! `git ls-files` FAILED — the repo-owned file lists are EMPTY, so this target' \
+	    '   would report a pass having checked nothing at all. Refusing.' \
+	    '' \
+	    '   Usually a container: the checkout is owned by another uid and git declines' \
+	    '   with "detected dubious ownership". Fix it with:' \
+	    "       git config --global --add safe.directory '$$PWD'" >&2; \
+	  exit 1; }
 CORE_PINS := core/scripts/tool-versions.env
 MARKDOWNLINT_VERSION := $(shell sed -n 's/^MARKDOWNLINT_VERSION=//p' $(CORE_PINS) 2>/dev/null)
 
@@ -61,13 +88,16 @@ check: lint capabilities
 
 shell:
 	@command -v shellcheck >/dev/null 2>&1 || { echo '- shellcheck not installed — SKIP'; exit 0; }; \
+	  $(GIT_GUARD); \
 	  [ -n "$(SH_FILES)" ] || { echo '- no repo-owned *.sh'; exit 0; }; \
 	  echo ':: shellcheck $(SH_FILES)'; shellcheck $(SH_FILES)
-	@[ -n "$(SH_FILES)" ] || exit 0; \
+	@$(GIT_GUARD); \
+	  [ -n "$(SH_FILES)" ] || exit 0; \
 	  for f in $(SH_FILES); do echo ":: bash -n $$f"; bash -n "$$f" || exit 1; done
 
 zsh:
 	@command -v zsh >/dev/null 2>&1 || { echo '- zsh not installed — SKIP'; exit 0; }; \
+	  $(GIT_GUARD); \
 	  [ -n "$(ZSH_FILES)" ] || { echo '- no repo-owned *.zsh'; exit 0; }; \
 	  for f in $(ZSH_FILES); do echo ":: zsh -n $$f"; zsh -n "$$f" || exit 1; done
 
@@ -87,6 +117,7 @@ md:
 	@# version, so a rule that changes across a bump reds CI against a green run here.
 	@# npx needs only node, fetches the exact pinned version, and REFUSES rather than guess
 	@# if the pin is unreadable — a silently-unpinned lint is the thing being fixed.
+	@$(GIT_GUARD)
 	@if ! command -v npx >/dev/null 2>&1; then echo '- npx not available — SKIP'; \
 	elif [ -z "$(MARKDOWNLINT_VERSION)" ]; then \
 	  echo "!! MARKDOWNLINT_VERSION unreadable from $(CORE_PINS) — refusing to lint unpinned"; exit 1; \
