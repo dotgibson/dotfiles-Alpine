@@ -58,6 +58,13 @@ OP_APK_KEY_SHA256="0e88171d9f8b7630763f70cbf69f2a01b4ba8ea1d8e79487f59c162db255e
 # core/PORTING-MATRIX.md footnote 5. Bump it only when Core's floor actually moves.
 TREESITTER_FLOOR="0.26.1"
 
+# Neovim itself. nvim-treesitter's `main` branch does not merely prefer 0.12 — it
+# will not load below it, so this floor and TREESITTER_FLOOR above are two halves of
+# ONE requirement, and only one of them used to be checked. Read by
+# _dotfiles_nvim_meets_floor below; the fleet-wide version table lives in
+# core/PORTING-MATRIX.md footnote 33. Bump it only when Core's floor actually moves.
+NEOVIM_FLOOR="0.12.0"
+
 while [[ $# -gt 0 ]]; do case "$1" in
   --links-only) LINKS_ONLY=1 ;;
   --dry-run | -n) DRY=1; LINKS_ONLY=1 ;;
@@ -220,7 +227,7 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   return 0
 }
 
-# ── tree-sitter version floor ─────────────────────────────────────────────────
+# ── nvim-treesitter version floors (tree-sitter-cli AND neovim) ───────────────
 # nvim-treesitter (pinned to `main` in core/nvim) hard-requires tree-sitter-cli
 # >= 0.26.1. Alpine's `community` package IS the musl build, but it only CLEARS
 # that floor on v3.24 (0.26.7-r0) and edge (0.26.7-r1) — v3.21 ships 0.24.4-r0
@@ -280,6 +287,28 @@ _dotfiles_ts_meets_floor() { # <floor>
     _dotfiles_ver_lt "$ver" "$floor" || return 0
   done
   return 1
+}
+
+# _dotfiles_nvim_meets_floor <floor> — true when the nvim that will actually RUN
+# clears <floor>. PATH-only on purpose, unlike its tree-sitter sibling: there is no
+# cargo/user-local neovim to also probe here (no cargo crate ships the binary, and the
+# PATH prelude already puts mise shims and ~/.local/bin ahead of /usr/bin), so whatever
+# `command -v nvim` resolves to IS what Core's config loads. An nvim whose --version
+# cannot be run or parsed counts as NOT meeting the floor — same fail-loud default.
+_dotfiles_nvim_meets_floor() { # <floor>
+  local floor="$1" cand out ver
+  cand="$(command -v nvim 2>/dev/null)" || return 1
+  [[ -n "$cand" && -x "$cand" ]] || return 1
+  out="$("$cand" --version 2>/dev/null)" || return 1
+  # `nvim --version` prints "NVIM v0.12.2" on its first line; take that line's last
+  # field and drop the leading "v". Dev builds print "NVIM v0.12.0-dev-1234+gabc123",
+  # which _dotfiles_ver_lt truncates at the first "-" — 0.12.0-dev reads as 0.12.0.
+  out="${out%%$'\n'*}"
+  ver="${out##* }"
+  ver="${ver#v}"
+  [[ "$ver" =~ ^[0-9] ]] || return 1
+  _dotfiles_ver_lt "$ver" "$floor" && return 1
+  return 0
 }
 
 # ── fetch a file only if it matches a pinned SHA-256 ───────────────────────────
@@ -417,6 +446,21 @@ provision() {
       # sitting below the floor with nvim-treesitter broken and nothing said.
       blib_warn "tree-sitter-cli is absent or below nvim-treesitter's >=$TREESITTER_FLOOR floor and cargo is not installed — install it (${SU:+$SU }apk add cargo) then: cargo install --locked tree-sitter-cli (or: mise use -g tree-sitter)"
     fi
+  fi
+  # neovim: the OTHER half of the nvim-treesitter requirement, and the half that had
+  # no guard at all. The block above version-checks tree-sitter-cli for nvim-treesitter's
+  # sake, then packages.txt installs a `neovim` that nvim-treesitter will not load on at
+  # all on v3.21 (0.10.4), v3.22 (0.11.1) and v3.23 (0.11.7) — the dependency was
+  # checked, the thing it is a dependency OF was not (dotfiles-Alpine#170).
+  #
+  # Warn-only, deliberately: there is no cargo or musl-safe prebuilt fallback to offer.
+  # Neovim's own releases are glibc-linked AppImages, which do not run here, so building
+  # from source is the only route and that is a minutes-long job with its own toolchain
+  # — not something to start unasked mid-bootstrap. Point at the two real fixes and let
+  # the operator choose. The one thing this must NOT do is stay silent, which is exactly
+  # the failure mode the tree-sitter guard above exists to prevent.
+  if ! _dotfiles_nvim_meets_floor "$NEOVIM_FLOOR"; then
+    blib_warn "neovim is absent or below nvim-treesitter's >=$NEOVIM_FLOOR floor (v3.21/v3.22/v3.23 ship 0.10.x-0.11.x) — nvim-treesitter will not load. Fix: move this box to v3.24+ or edge, or install a newer nvim (mise use -g neovim@0.12)"
   fi
   # tealdeer (tldr): `testing`-only on Alpine (never in `community`), so not in
   # packages.txt — build from source via cargo. Presence-guarded on the `tldr`
