@@ -16,16 +16,6 @@
 [[ -d "$HOME/.local/bin" && ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin${PATH:+:$PATH}"
 [[ -d "$HOME/.cargo/bin" && ":$PATH:" != *":$HOME/.cargo/bin:"* ]] && export PATH="$HOME/.cargo/bin${PATH:+:$PATH}"
 
-_IS_WSL=0
-if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
-  _IS_WSL=1
-elif [[ -r /proc/version ]]; then
-  # zsh reads the file directly (no grep/cat fork) — WSL kernels tag /proc/version.
-  _pv="$(</proc/version)"; _pv=${_pv:l}
-  [[ "$_pv" == *microsoft* || "$_pv" == *wsl* ]] && _IS_WSL=1
-  unset _pv
-fi
-
 # ── privilege tool: doas is Alpine's default. Alias sudo->doas so muscle memory
 # (and most interactive commands) work even where sudo isn't installed.
 if ! command -v sudo >/dev/null 2>&1 && command -v doas >/dev/null 2>&1; then
@@ -63,7 +53,10 @@ command -v op >/dev/null 2>&1 && alias opsignin='eval "$(op signin)"'
 alias localip='ip -brief -4 addr show scope global'
 
 # ── WSL-only niceties ─────────────────────────────────────────────────────────
-if (( _IS_WSL )); then
+# WSL detection is Core's (_core_is_wsl in core/zsh/00-tools.zsh, dotfiles-core#449) — the
+# lint gate fails an OS layer that grows its own back. The function guard keeps this quiet
+# if the layer is ever sourced without Core's 00-tools.zsh; it is NOT a local fallback.
+if (( $+functions[_core_is_wsl] )) && _core_is_wsl; then
   alias open='explorer.exe'
   command -v wslview >/dev/null && alias xdg-open='wslview'
   [[ -n "${WINHOME:-}" ]] && alias cdwin='cd "$WINHOME"'
@@ -110,7 +103,7 @@ if [[ -n ${HAVE_ATUIN:-} ]]; then
   fi
 fi
 
-unset _ASU _IS_WSL
+unset _ASU
 
 # ── auto-start/attach tmux for interactive terminals ─────────────────────────
 # DEFERRED TO THE FIRST PROMPT, deliberately — do not "simplify" this back to an
