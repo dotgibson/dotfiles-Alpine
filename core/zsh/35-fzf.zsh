@@ -117,6 +117,50 @@ _fzf_zoxide_jump() {
 zle -N _fzf_zoxide_jump
 
 # =========================================================
+# Widget: Alt+C — cd into a SUBDIRECTORY of the current one
+# =========================================================
+# NOT a second key for Alt+Z, and the distinction is the whole reason this exists (#808).
+# Alt+Z is a FRECENCY jump to anywhere zoxide has already seen; Alt+C is scoped to below
+# $PWD and finds directories zoxide has never visited. Different intents, and an operator
+# arriving from stock fzf or PSFzf expects the latter on this key.
+#
+# PARITY.md advertised Alt+C as `aligned` for years while NEITHER shell bound it — zsh has
+# never bound ^[c and never sources fzf's own key-bindings, so the FZF_ALT_C_* exports that
+# would have configured fzf's stock widget were dead config and were deleted in v6.0.0.
+# #682 removed the false claim; this implements it for real.
+#
+# The picking is fcd's (30-functions.zsh) — this widget is the key, not a second copy of
+# the function. Its first cut re-implemented fd|fzf inline and the copy drifted in two ways
+# nobody chose: no --hidden, so Alt+C could not reach .config/.github/.claude while `fcd`
+# could, and no find fallback (#933). Delegating is what makes "cd into a subdirectory" mean
+# one thing on both entry points; the --hidden/--exclude .git reasoning lives with fcd now.
+#
+# THE KEY COLLIDES WITH vi's CHANGE OPERATOR, and that is accepted, not overlooked. In
+# viins `^[` is vi-cmd-mode and `c` is vicmd's `vi-change`, and a terminal sends Alt+C as
+# exactly those two bytes — so after Esc, zsh has to wait to learn whether a `c` is part of
+# this chord or the start of `cw`/`ciw`. Core loads zsh-vi-mode, whose NEX readkey engine
+# owns that wait: ZVM_ESCAPE_KEYTIMEOUT, default 0.03s, NOT the 0.4s ZVM_KEYTIMEOUT that
+# governs ordinary multi-key sequences. A terminal's Alt+C lands well inside 30ms; a human
+# typing Esc then `c` almost never does. Alt+Z has no such problem (`z` is not a vicmd
+# verb), and the parity row that justifies this key — PSFzf's Alt+c — has none either,
+# since PSReadLine is not in vi mode. Moving to a Ctrl chord would close the window and
+# break the parity that is the reason the binding exists; the window is kept.
+_fzf_cd_dir() {
+  # Bound unconditionally in 40-bindings.zsh, so guard here — the same shape as the two
+  # widgets above, in Core's voice, rather than fcd's error for a key press. Only fzf is
+  # required: fd's absence is fcd's find fallback, not a refusal.
+  if ! _core_have fzf; then
+    _core_warn "Alt-C: needs fzf"
+    zle reset-prompt
+    return 1
+  fi
+  fcd
+  zle reset-prompt
+}
+
+zle -N _fzf_cd_dir
+
+# =========================================================
 # Widget: Ctrl+R — custom history searcher
 # =========================================================
 _fzf_history_clean() {

@@ -101,8 +101,15 @@ unset _ASU
 # 99-local.zsh override was silently missing inside every tmux session — the one
 # place you actually work. A one-shot precmd hook fires after the whole rc is
 # sourced, so the full load order completes first.
+#
+# DOTFILES_NO_AUTOTMUX skips the whole thing — the fleet's one opt-out name (MacBook,
+# openSUSE and Gentoo read it too). Any harness that drives an interactive zsh and must not
+# land in tmux exports it: dotfiles-core's README hero render sources this layer from inside
+# vhs, and without the knob the hook fired at the first prompt and typed the whole tour into
+# a fresh `main` session (dotgibson/dotfiles-core#877). Core's gen-hero-tape.sh refuses to
+# render on a layer that does not honour it.
 if command -v tmux >/dev/null 2>&1 \
-   && [[ -z "$TMUX" && -t 1 && "${TERM_PROGRAM:-}" != "vscode" ]]; then
+   && [[ -z "$TMUX" && -z "${DOTFILES_NO_AUTOTMUX:-}" && -t 1 && "${TERM_PROGRAM:-}" != "vscode" ]]; then
   autoload -Uz add-zsh-hook
   _alpine_tmux_autostart() {
     # Unhook BEFORE attaching: tmux is not exec'd, so control returns here when you

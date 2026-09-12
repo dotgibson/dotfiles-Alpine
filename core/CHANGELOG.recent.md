@@ -5,10 +5,1288 @@ wholesale, `scripts/release.sh` runs that generator on every release, and
 `scripts/audit-core.sh` §9e fails when this file is not byte-identical to a fresh
 render. To fix a conflict or a stray edit, re-run the generator — never patch it.
 
-The last 8 released sections of `CHANGELOG.md` (v7.0.0 … v5.4.1), vendored into every OS repo's
+The last 8 released sections of `CHANGELOG.md` (v7.3.0 … v6.0.0), vendored into every OS repo's
 `core/` by `core.vendor` so `core whatsnew` can answer offline. The full changelog is
 repo-meta and stays upstream:
 [dotgibson/dotfiles-core/CHANGELOG.md](https://github.com/dotgibson/dotfiles-core/blob/main/CHANGELOG.md).
+
+## [v7.3.0] - 2026-09-09
+
+### Added
+
+- **The vocabulary register reads `dotfiles-Windows` — the same seven verbs, spelled
+  `.\task.ps1 <verb>` (#855, a #691 follow-up).** #691's promise is that a contributor
+  moving between repos re-learns nothing, and the one repo still outside it was the
+  fleet's most-tested: no Makefile, no runner, bare scripts, in exactly the place where
+  "reproduce the CI gate locally" has the most to offer. Windows is deliberately absent
+  from `scripts/os-repos.txt` (that list drives the fan-out, and Windows vendors no
+  `core/`), so the register now names it the way `fleet-drift.sh` does — **an outlier row
+  read by name**, last in the table, with `task.ps1` beside the repo so the `make <verb>`
+  headers stay the contract's names — and `os-repos.txt` stays Windows-free, which the
+  suite pins. `make` is not a given on a Windows host and `just` would be a new dependency,
+  so the shim is PowerShell: a dispatcher over the repo's existing entry points, landing in
+  `dotfiles-Windows` as `task.ps1`.
+  The read is **static**, like the Makefile read: a verb is a quoted key of `Get-TaskVerbs`
+  alone at the start of its line — a key on a comment line or inside a string declares
+  nothing — and `test` is credited only when its entry names the suite runner under the
+  populated `tests/` by path (either separator), else **no-op**; a Windows clone without the
+  shim renders **no task.ps1** across its row, the way a fleet repo without a Makefile
+  renders **no Makefile**. The test-floor column is the same reader as everywhere else,
+  which already credited a `shell: pwsh` step running `./tests/Invoke-Tests.ps1`. The
+  per-verb cell logic that was inline in the fleet loop is one function shared by both row
+  kinds, so a label cannot drift between them.
+
+- **The CI floor now bans blanket `permissions:` grants — `banned_permission_values`.** Rule 5
+  requires every workflow to declare a `permissions:` block but never looked at its value, so
+  `permissions: write-all` — the maximal token grant, strictly worse than omitting the block —
+  satisfied a rule named for least privilege. A new dimension (5b) in `scripts/check-modern.sh`
+  reads the value: at any indent, so the job-level form is caught too (a job grant that widens
+  to everything narrows nothing); bare or quoted; and with a trailing `# comment` tolerated, so
+  a rationale beside the grant is not the way past the gate. It is anchored to the key and the
+  line end, which is why it is its own dimension rather than a `banned_patterns` entry: that
+  list is a blind `grep -F`, under which the word could never appear in a workflow comment at
+  all — not even to explain why a grant is narrow. `read-all` is deliberately not banned; it is
+  not a token-abuse vector, and banning it buys noise.
+
+  Like rule 8, this is not deprecation-driven, and the baseline says so plainly. The fleet is at
+  zero occurrences, so it is adopted at zero fix-first cost — and Core owns the `*-call.yml@vN`
+  reusable workflows the OS repos actually execute. Both directions are covered by fixtures in
+  the hermetic `check-modern` harness: the workflow-level, job-level and quoted-with-comment
+  forms are each caught, while the word in a comment, `read-all`, and a named-scope `write`
+  are not. (#816)
+
+### Fixed
+
+- **starship drew a dragon emoji on Kali** (#948, the Offense and Defense heroes, which film on
+  Kali). `[os.symbols]` had no `Kali` entry, so starship fell through to its own default — the
+  same gap openSUSE had until #950, with the same tofu wherever no colour-emoji font is
+  installed. `Kali` now gets the Nerd Font Kali glyph.
+
+- **`up -n`'s spinner painted a healthy dry run red** (found filming the nine OS/role README
+  heroes, #948). The spinner reports the exit of `_pkgup_list_to`, which is the COUNT VERB's —
+  and most archives overload it: `dnf check-update` exits 100 when updates _exist_,
+  `checkupdates` exits 2 when there are _none_. The list path was documented to ignore that
+  status (a partial list is still a better preview than none) but the spinner was not, so
+  every OS repo's signature moment read `x checking pacman for upgradable packages (exit 2)`
+  over a green "nothing to upgrade". The helper now answers 0 unless the archive declared its
+  exit meaningful (`PKG_COUNT_EXIT_TRUSTED`, Gentoo's case), where it still propagates.
+  Pinned both ways in `scripts/test/70-detection.sh`.
+
+- **starship drew a lizard emoji on openSUSE** (same hunt, #948). starship names SLES `SUSE`
+  and Leap/Tumbleweed `openSUSE`; `[os.symbols]` declared only the first, so an openSUSE
+  prompt fell through to starship's own default for the second — 🦎, which renders as tofu
+  wherever no colour-emoji font is installed, which is every terminal this palette targets.
+  `openSUSE` now gets the same Nerd Font glyph as `SUSE`.
+
+- **Every prompt on Debian 13 died with "maximum nested function level reached"** (found
+  filming dotfiles-Debian's README hero, #948). zsh-vi-mode's default is a lazy init from the
+  first precmd — after every rc file, so after the transient prompt has registered
+  `zle-line-finish` — at which point zvm wraps that widget, and `zvm_reset_prompt` reads the
+  wrapper's dynamically-scoped `$rawfunc` and calls the widget straight back into itself.
+  `45-plugins.zsh` now sets `ZVM_INIT_MODE=sourcing` before loading zvm, so the load order
+  means what its comments always said: zvm first, the transient prompt last, and last wins
+  `zle-line-finish`. Late `bindkey`s (50+, OS, role layers) now also land after zvm's reset
+  instead of under it. Pinned in `scripts/test/60-loader.sh`.
+
+- **Rule 2 of the CI floor now sees the `runs-on:` mapping form.** The matcher required the
+  banned label on the same line as `runs-on:` or `os:`, so `runs-on:` alone on its line with
+  the label on a nested `labels:` child — the runner-group syntax — walked straight through
+  the ban. The alternation gains `labels:`; no baseline change, and a fixture pins the shape.
+  Latent rather than live — the fleet uses no runner groups or self-hosted labels — and a
+  matrix key named anything other than `os:` still escapes, deliberately: catching it means
+  dropping the key prefix, which would then fire on every comment in the tree that names a
+  label. (#816)
+- **The atuin daemon guard probes the `/tmp` socket the 18.21.0 client gained (#941).**
+  Upstream PR atuinsh/atuin#4036 (merged 2026-08-31, in 18.21.0) makes the client try
+  `$TMPDIR/atuin-$UID/atuin.sock` and _then_ `/tmp/atuin-$UID/atuin.sock` even when `$TMPDIR`
+  is set, because the daemon and the shell need not agree on `$TMPDIR`: a systemd user unit
+  starts without one and binds `/tmp`, while a shell that exports one — a `99-local`, a tmux
+  server started under a different environment, a unit with `PrivateTmp=` — resolved only its
+  own. `_core_atuin_daemon_guard` probed that path, found nothing, exported
+  `ATUIN_DAEMON__ENABLED=false` at the first precmd and unhooked for the life of the shell with
+  **no warning**, because `_CORE_ATUIN_DAEMON_WAS_UP` is never set on that path — one candidate
+  short of where atuin's own client would have connected. The candidate list now appends the
+  `/tmp` path whenever `$TMPDIR` is set and is not `/tmp`, in upstream's order, still by
+  parameter expansion alone; the common case pays one connect as before. The suite gained the
+  case, which skips rather than clobbers when a real daemon already owns that inode on the box
+  running it. The finding came from the 2026-09-01 `/tool-scout` run, whose report was lost to
+  a filing error (#932). Both `VERIFIED_AGAINST` anchors in `zsh/00-tools.zsh` move from
+  `18.19.0` to `18.21.0` in the same change — a claim of re-measurement, not a version bump:
+  `atuin-guard-verify` was dispatched three times on 2026-09-03 against upstream's then-latest
+  and reported `holds` on both premises.
+- **The weekly routines no longer file a stub as the report when their subagent outlives the
+  main turn (#932).** Headless `claude -p` prints only the final turn, and it waits for
+  background work for a bounded 600 s before killing it and emitting whatever text it has.
+  `/tool-scout` delegates its research to a subagent; on 2026-09-08 that delegate was still
+  researching when the main turn ended, the ceiling fired, and `file-routine-issue.sh` filed
+  the "I'll relay its proposal when it lands" preamble as the scan — a report that reads as
+  "nothing found" to anyone who does not open the run log. `claude-routines.yml` now sets
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` for every job, so each job's `timeout-minutes` is
+  the only ceiling and overrunning it is a red job that `notify-failure` reports, not a green
+  one with a hollow issue. The two delegating routines (`/tool-scout`, `/doc-audit`) also now
+  say to wait for the delegate in the foreground, so the fix does not rest on one env var.
+  `/tool-scout` additionally learns how to check for an open `atuin-guard-verify:` verdict
+  without `Bash` — WebFetch the issue search — instead of reporting `gh` as unavailable every
+  week, which it always will be in that job.
+- **`gen-theme.sh --check` passed green over a sibling that was checked out but missing
+  its registered file (#933).** The sibling arm decided "can I reach this row?" on the
+  **directory**, so when `dotfiles-MacBook/` existed without `sketchybar/colors.sh` — the
+  sibling has not landed the palette yet, the zebar path moved, someone deleted it — no
+  `SKIPPED` line was printed, `preflight` and the render loop each took their partial-tree
+  `continue`, and §9d recorded a pass over a file nobody opened: coverage loss reading as
+  health, in the gate whose own comment says it exists to prevent exactly that. Both CI
+  legs that clone the fleet reliably have the directory, so that was the shape the failure
+  would have taken there. The row is now tested on the **file**; a present-but-incomplete
+  sibling is reported on its own `SKIPPED —` line, by file, and exits 3 like an absent one
+  (Core-relative rows keep the documented partial-tree `continue` — a different fact). §9d
+  collects its skip label from every `SKIPPED —` line rather than stripping at the first
+  phrase, and the suite gained the case the old one lacked: repo present, file absent.
+- **`Alt+C` could not reach hidden directories, and was a second, weaker copy of `fcd`
+  (#933).** `_fzf_cd_dir` re-implemented `fd | fzf` inline without `--hidden`, so the
+  widget skipped `.config`, `.github`, `.claude` and `.ssh` — the interesting directories
+  in a dotfiles tree, which `fcd` reached — and refused outright without fd where `fcd`
+  falls back to `find`. Its `--exclude .git` was dead config too: without `--hidden`, fd
+  already skips `.git` for being hidden, while the comment above it claimed the flag kept
+  the object store out of the list. The widget now **delegates to `fcd`**, which carries
+  the prompt and preview the widget used to have alone, so "cd into a subdirectory" has
+  one definition on both entry points. The widget's guard needs only fzf now.
+- **`Alt+C`'s collision with vi's change operator is stated (#933).** In viins `^[` is
+  `vi-cmd-mode` and `c` is `vi-change`, and a terminal sends Alt+C as exactly those two
+  bytes. The binding is kept — Core loads zsh-vi-mode, whose NEX engine disambiguates Esc
+  with `ZVM_ESCAPE_KEYTIMEOUT` (30 ms, not the 0.4 s `ZVM_KEYTIMEOUT`), which a terminal's
+  chord lands inside and a human's `Esc` `cw` almost never does; and the parity row that
+  justifies the key has no such problem, since PSReadLine is not in vi mode. The widget's
+  comment now owns that tradeoff instead of omitting it.
+- **`freshness.yml`'s apply step could not take the exit 3 the updater grew for it (#933).**
+  `update-fleet-versions.sh` exits 3 so an absent fleet stops reading as a defect (#917),
+  but its only caller ran it bare under `set -euo pipefail`, where 3 reds the step exactly
+  as 2 did — the check-mode step forty lines above already branched on the code, which
+  made the omission visible by contrast. The apply step now branches too: 3 is a summary
+  line and exit 0. The fleet-clone loop above it is tolerant as well: one repo that cannot
+  be cloned anonymously is warned by name and skipped, rather than aborting the loop
+  before either graceful path downstream could run.
+- **`render_fleet_versions` ran TSV data through `printf '%b'` (#933).** Rows were
+  accumulated with a literal `\t` and emitted with `%b`, which reinterprets escapes in the
+  fields as well as the separators — a backslash in any field would have been rewritten,
+  and a `\c` would have truncated the rest of the table silently. It now joins with the
+  `$TAB` the script already defines and emits with `%s`, removing the class.
+- Suite: the "an unterminated `/*` is not treated as a marker" case renders the fixture
+  before appending the line, so its `!= 2` assertion can actually fail — on an unrendered
+  stub `--check` was already 1, and the case passed whatever the parser did. Also dropped a
+  duplicated 12-line comment paragraph in §9d (#933).
+- **`/doc-audit`'s 2026-09-01 fleet sweep (#811) — the Core-side drift that survived the
+  v7 cut.** The sweep was filed against 6.0.0 and most of its findings were overtaken by the
+  v6→v7 release work (the `refs/tags/v5` vendoring commands, the Fedora `sudo dnf
+  check-update` and Gentoo `gentoo-pkg-pending` cells, the tree-sitter-cli orphaning hedge and
+  the Offense repo-status row were all already right). What was not: `CLAUDE.md` and
+  `RELEASE-RUNBOOK.md` still named `@v5` as the fleet's _current_ caller alias while every
+  caller is `@v7`; `PORTING-MATRIX.md` said `dotfiles-Gentoo` cargo-installs `ouch` in two
+  places while its own table cell, footnote ¹² and the repo's `bootstrap.sh` all say
+  `guru_extras_install app-arch/ouch` (dotgibson/dotfiles-Gentoo#133); `ARCHITECTURE.md` and
+  the matrix's Offense paragraph still described `dotfiles-Offense` as carrying its own apt OS
+  layer (it ships no `os/` at all — band 80 comes from `dotfiles-Debian`, which accepts
+  `ID=kali`), and the paragraph quoted the pre-v4 loader chain (`… os offensive local`) for
+  what is now `80-os → 85-offensive → 99-local`.
+- **`core.vendor`'s line-number citations rotted a second time in a week, so the cross-repo
+  ones are gone.** The same-repo `zsh/30-functions.zsh` cite for the `PORTING-MATRIX.md` hint
+  string had moved 1224 → 1382 (the sweep found it stale at 765 a week earlier), and 27 of
+  the 43 cross-repo `file:line` cites — every one of the seven into `dotfiles-MacBook`'s
+  `ci.yml`, all seven `check-capabilities.sh` Makefile lines — pointed at the wrong line.
+  Those files move independently of Core, so the numbers can never stay right; the
+  annotations now name the consumer file and keep the exact line only for cites into this
+  repo, which is what `audit-core.sh` §1e can hold to reality. (#811)
+
+- **The README hero is re-rendered from the current tape, and the render-date check is wired
+  in as `audit-core.sh` §9l (#877 items 1 and 2, the last of #698's original defect).**
+  `assets/demo.gif` on `main` was still the blob committed on 2026-07-06: a `dotfiles-MacBook`
+  tree walked through `z dotfiles` and `core help`, two months before #862 rewrote the tape to
+  film a `dotfiles-core` checkout, and two releases after #870 landed `--check-render` red and
+  deliberately un-wired. The front page showed the very thing #698 was filed about the whole
+  time. The gif is now the current tape's tour — `ll`, `cat README.md`, `glog -8`,
+  `core status`, `core-version` — filmed on a Core host over a clean `main` checkout, then put
+  through the `gifsicle -O3 --lossy=80 --colors 64` pass `assets/README.md` documents.
+  **§9k's ceiling was never tested against this tape until now**: `assets/hero.tape.in`'s own
+  comment records the first shortened cut at 2.46 MB, so the byte count is in the PR, not in
+  prose. `make check-hero-render` flips green on the uncommitted gif and stays green once the
+  gif and this entry land in the same commit, which is the only order §9l accepts.
+  **§9l is the one block #870's entry promised.** It mirrors §9k's shape — exit 1 is a stale or
+  missing gif with the script's own per-row remedy carried through `fail_detail`, exit 2 is
+  "could not run", and exit 3 (no usable history: shallow, not a checkout, unrelated
+  histories) is an **environment skip** in §9h's posture, never a pass, which is #821's lesson.
+  Always on and not scope-guarded, for §9j's reason: a `.tape` and a `.gif` are both inert to
+  `ci-classify.sh`. `scripts/test/42-gen-hero-tape.sh` pins the third leg as wired, exactly
+  as it pins the first two. Item 3 — the nine sibling heroes — stays open on #877: the tapes
+  are written by `make gen-hero-tape-fleet` today, but `@@HOSTGUARD@@` requires each to be
+  filmed on the distro its row is about, so that is nine boxes, not one.
+
+- **The hero render can no longer be hijacked by the OS layer's tmux auto-attach (#877).**
+  The tape's hidden setup sources `~/.config/zsh/.zshrc` from inside vhs — an interactive TTY —
+  and every OS layer attaches (or creates) a `main` tmux session for one. The `source` then
+  never returns: the rest of the tour is typed into the pane, the `cd` never lands, and the gif
+  films a tmux status bar over the wrong directory, which is exactly how the first #877 render
+  came out. The fleet already had an opt-out, spelled two ways — `DOTFILES_NO_AUTOTMUX` on
+  MacBook, openSUSE and Gentoo, `DEBIAN_NO_TMUX` on Debian — and nothing at all on Alpine, Arch
+  and Fedora. **`DOTFILES_NO_AUTOTMUX` is now the one name**: the template exports it before the
+  source, the four repos that did not read it gain the guard (Debian keeps its own name working
+  alongside), and `gen-hero-tape.sh` **refuses to render a row whose shell layer auto-attaches
+  without honouring it** — exit 2, the cannot-run leg, scanning that repo's own `os/` and
+  `zsh/` (never the vendored `core/`) with comment lines dropped in both directions, so
+  Alpine's prose about an inline attach it does not do is not an attach, and a knob that is only
+  mentioned guards nothing. The `.` row scans Core's own `zsh/`, so the check is never vacuous.
+  Deliberately **not** an in-tape `[[ -z $TMUX ]] || exit 1` after the source: on an unguarded
+  host that line would be typed into the attached pane and `exit 1` a shell in a real session.
+  The tape changed, so the gif is re-rendered in the same commit — the only order §9l accepts.
+
+### Changed
+
+- **nvim plugin pins move forward for three plugins.** `friendly-snippets`, `gitsigns.nvim` and
+  `nvim-lspconfig` advance to upstream HEAD — the set a re-run of the fleet health board's
+  signals (#794) found stale on 2026-09-09, the day after #938 and the freshness bot's Monday
+  refresh (#946) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all three), and each range was read before promotion:
+
+  - **`friendly-snippets`** `30bfd47` → `6290e13`, 6 commits: snippet data only — React
+    `className`, Python async, Kubernetes kustomization/helm/namespace and Unity
+    `SerializeField`/`RequireComponent` snippets, a Perl tabstop fix, and one `package.json`
+    line mapping `typescriptreact` onto the HTML snippets. Core loads it only as blink.cmp's
+    snippet source; no Lua API is involved.
+  - **`gitsigns.nvim`** `5be654f` → `f2421c5`, 6 commits: a new repository diff panel (an
+    additive `diff` action with its own `actions/diff.lua`, `git/diff.lua` and
+    `git/commit.lua`), a `diffthis` cleanup that ignores already-closed source windows, a
+    `show` fix that reads the requested revision's path, and an attach guard for a buffer
+    wiped while `on_attach_pre` yields. Core sets `on_attach`, not `on_attach_pre`, and the
+    actions its keymaps call (`nav_hunk`, `stage_hunk`, `reset_hunk`, `stage_buffer`,
+    `preview_hunk`, `blame_line`, `diffthis`, `select_hunk` via `:Gitsigns`) keep their
+    signatures — the only new signature is the internal `create_revision_buf` helper.
+  - **`nvim-lspconfig`** `19576de` → `84b6b6c`, 2 commits: a new `laravel_lsp` server config
+    and its docs. Core does not configure it; nothing under Core's `servers/` tree is affected.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+
+- **The README hero tour's wait after its signature command is a registry column** (#948,
+  the nine sibling heroes): `assets/hero-repos.txt` gains an optional seventh field, `sigwait`,
+  a vhs duration that lands after `Sleep` on the signature line, 4s when absent (it was a
+  fixed 2.2 s). `dnf --refresh check-update` re-validates every enabled repo's metadata before
+  it answers — ~3 s on a warm cache — and at 2.2 s the first Fedora render typed the proof line
+  into the spinner and cut before the answer; Portage resolves `emerge --pretend` in ~10 s, so
+  Gentoo's row says `15s` and nobody else's says anything. `gen-hero-tape.sh` validates the
+  field (a duration vhs can parse; an empty seventh column is refused) and the suite pins it.
+  Every tape and this repo's own gif are re-rendered. Eight of the nine sibling heroes are now
+  filmed and committed in their repos — Fedora, Alpine, Arch, Debian, Gentoo, openSUSE, Offense
+  and Defense, each on a rootless chroot of its distro; `assets/README.md` records the recipe
+  and the five traps; MacBook's was filmed on a Mac, which closes the set.
+
+- **nvim plugin pins move forward for five plugins.** `friendly-snippets`, `nvim-lspconfig`,
+  `nvim-tree.lua`, `nvim-treesitter` and `schemastore.nvim` advance to upstream HEAD — the set
+  the 2026-09-07 fleet health board (#794) reported as stale, one day after the freshness bot's
+  Monday refresh (#916) had rolled the previous set.
+
+  Every new SHA is a strict fast-forward of the one it replaces (`status=ahead`, `behind_by=0`
+  in all five), and each range was read before promotion:
+
+  - **`friendly-snippets`** `6cd7280` → `30bfd47`, 16 commits: snippet-data fixes and additions
+    (markdown todo variants, django template tags, a Java class fix, zig 0.15 `buildExe`) plus a
+    repo-wide Prettier/StyLua reformat that accounts for most of the 76 touched files. Core loads
+    it only as blink.cmp's snippet source; no Lua API is involved.
+  - **`nvim-lspconfig`** `615d7b2` → `19576de`, 6 commits: fixes to `robotcode`, `powershell_es`
+    and `phpantom_lsp` — none of which Core configures — and a `plugin/lspconfig.lua` refactor
+    that moves legacy-only code below its version check. Nothing under Core's `servers/` tree is
+    affected.
+  - **`nvim-tree.lua`** `b2aadda` → `882c54f`, 1 commit: an "invalid 'line'" renderer fix for an
+    empty tree with `hidden_display` set. Core calls `setup()` and `api.tree.open()`, both public
+    and unchanged.
+  - **`nvim-treesitter`** `32dbd2e` → `5cb0114`, 1 commit: type-annotation tightening in
+    `async.lua`; the three `install.lua` lines it touches are `---@type` comments, so the
+    `install()` Core calls has the same signature.
+  - **`schemastore.nvim`** `4a0e1b7` → `2224119`, 2 commits: catalog refreshes only.
+
+  Nothing renames or removes an API Core calls. (`nvim/lazy-lock.json`, #794)
+- **Bumped two pins in `scripts/tool-versions.env` on the weekly freshness review; held the
+  third (#813).** This is the class no bot covers — the CLI gate pins sit between
+  `/freshness-triage`'s plugin locks and Renovate's manifests — so the routine re-audited all
+  ten against upstream and found seven still current:
+
+  | Pin | Was | Now | |
+  | --- | --- | --- | --- |
+  | `NVIM_VERSION` | 0.12.4 | **0.12.5** | one patch on the 0.12 line |
+  | `CLAUDE_CODE_VERSION` | 2.1.222 | **2.1.265** | the routine bots' own CLI |
+  | `SHFMT_VERSION` | 3.13.1 | 3.13.1 | **held** — 3.14.x changes formatting output, see below |
+
+  nvim 0.12.5 is fixes-plus-features on a line whose breaking changes (diagnostic sign config,
+  `vim.diagnostic.disable()`, `vim.diff` → `vim.text.diff`, the `'shelltemp'` default) all
+  landed at 0.12.0 and were absorbed by the 0.12.4 pin; nothing new to adapt to.
+  `NVIM_SHA256` recomputed with `make update-tool-checksums` and **cross-checked against the
+  `digest` GitHub reports for the release asset** rather than trusted from our own download —
+  the four unbumped hashes re-derived byte-identical, which is its own integrity signal.
+
+  **shfmt stays at 3.13.1 deliberately.** 3.14.0 changed _output_, not just behaviour — a space
+  after `!` in arithmetic, nested closing parens spaced like the opening ones, no `;`-joined
+  `then`/`do` when a heredoc is pending — and 3.14.1 followed a week later with heredoc
+  indentation fixes. Core's own audit does not gate shfmt, so a green tick here proves nothing
+  about it; the pin exists only so `setup-core-tools` installs one verified shfmt for MacBook
+  and the distro/role lint workflows, where a bump can newly flag files that pass today with
+  no diff in this repo to warn you. The consumer step is advisory (`::warning::`, not red), so
+  it would not break them — but it would start nagging on every run until each repo reformats.
+  Bump it alongside a reformat pass across the consumers, not on its own.
+- **Every mint step passes `client-id`, not the deprecated `app-id`, and reads a new
+  `FLEET_APP_CLIENT_ID` org variable (#831).** Our pinned `create-github-app-token` (v3.2.0)
+  carries `deprecationMessage: "Use 'client-id' instead."` on `app-id`, and all five mints
+  here — `notify-web.yml`, the reusable `notify-web-call.yml`, `sync-fanout.yml` and
+  `freshness.yml`'s three — passed it.
+  **It is not a one-line swap, which is why it needed its own change.** `FLEET_APP_ID` holds
+  the App **ID**; the new input wants the App's **Client ID**, a different value on the same
+  settings page (and a public one: `gh api /apps/dotgibson-fleet-sync --jq .client_id`). So the
+  variable is a **new** one rather than a repurposed one — the two names never hold different
+  meanings mid-rollout — and the `if:` guards move in the same commit as the input, because a
+  guard still testing `vars.FLEET_APP_ID` against a step reading `FLEET_APP_CLIENT_ID` would
+  keep gating on a variable the mint no longer uses.
+  **Precondition, not a follow-up: the org variable must exist before this merges.** With it
+  unset, every guard is false, `sync-fanout`'s preflight goes red (the loud half) and the
+  `notify-web` dispatch degrades to a `::warning::` and skips (the quiet half) — the exact
+  failure shape #831 was written to avoid.
+  **`FLEET_APP_ID` is retired here but must not be deleted yet.** The nine OS-repo callers
+  execute `notify-web-call.yml` at the `@v7` alias, which reads the old variable until the next
+  release advances it; `htpx`'s fan-out and `dotfiles-Windows`' inline notifier still pass
+  `app-id` and are tracked in their own repos. `GITHUB-APP-AUTH.md` carries the retirement
+  note with the grep that derives the remaining readers, its _Re-creating or re-keying_ section
+  now tells you to collect the Client ID, and the known-gaps callout shrinks to the one gap
+  left (scope the verbs).
+- **Rule 1's node20 rationale carries the final date.** The ban was already correct; the
+  comment said "fall 2026". Node 20 leaves the runners on **2026-09-23** — the 2025-09-19
+  deprecation changelog, its date fixed by an editor's note of 2026-08-25. No fix-first work:
+  every external action in the tree (`actions/checkout`, `actions/cache`,
+  `actions/create-github-app-token`) already resolves to `using: node24` at its pinned SHA.
+  (#816)
+
+## [v7.2.0] - 2026-09-08
+
+### Added
+
+- **The `core:theme:gen` marker grammar learns a second comment syntax, so the zebar palette
+  — the last hand-authored copy of Core's colours — is generated too (#926, closing #857).**
+  Every consumer up to #857 was `#`-commented (toml, yml, zsh, sh, conf), so the grammar was
+  written for `#` and that looked like a property of the tool rather than an accident of which
+  files happened to carry blocks. **CSS has no `#` comment** — `#` there begins an id selector
+  — so `dotfiles-Windows`' `styles.css` could not carry a marker in any form.
+  **The style is registered nowhere, which is the whole shape of the change.** `build_file`
+  echoes both markers **verbatim** — it never writes them — so the generator never needs to
+  know which syntax a file uses. Only the matchers do, and they simply accept either. The
+  fourth registry column #926 first proposed would have stored a fact in two places, and the
+  copy in the file is the one that decides.
+  The pattern was restated in **three** greps; it is defined once now, which is how the
+  `#`-only assumption survived unnoticed in the first place.
+  **Two defects surfaced only by running it.** `*.css` was missing from the reverse scan's
+  file set, so a stray CSS marker was invisible to the gate that exists to find exactly that.
+  And the scan took the block id as the last whitespace-separated field — which on this syntax
+  is the closing `*/`, so every CSS block would have reported as unregistered under a name no
+  registry could ever carry.
+  An unterminated `/*` is deliberately **not** a marker: a line opening a comment it never
+  closes would swallow the generated block into it, leaving a file that still parses while
+  rendering nothing.
+  Nothing drifted — all eleven values already agreed, so this is pure gating, and a
+  hand-edited hex in the bar now exits 1.
+
+- **`Alt+C` — cd into a subdirectory — is real on both shells, after years of being advertised
+  and bound by neither (#808).** `PARITY.md` listed it as `aligned` beside `Alt+Z`; #682
+  established that **zsh had never bound `^[c`** and never sourced fzf's own key-bindings (the
+  `FZF_ALT_C_*` exports that would have configured fzf's stock widget were deleted in v6.0.0 as
+  dead config), and that `dotfiles-Windows` set only the provider and reverse-history chords.
+  #682 deleted the claim rather than implementing it; this implements it.
+  **It is not a second key for `Alt+Z`.** `Alt+Z` is a frecency jump to anywhere zoxide has
+  seen; `Alt+C` is scoped below `$PWD` and finds directories zoxide has never visited. Different
+  intents, and an operator arriving from stock fzf or PSFzf expects the latter here.
+  `_fzf_cd_dir` follows the three sibling widgets exactly, including the guard: bound
+  unconditionally, so it warns in Core's voice rather than piping an unset `$FD_BIN` into a
+  missing fzf. `.git` is excluded for the file picker's reason — a repo's object store is
+  thousands of directories nobody wants to cd into.
+  **It gets its own `PARITY.md` row, not a widened `Dir jump`.** #808 predates #809, which made
+  every row a single claim precisely so a row could not outgrow its needles; folding `Alt+C`
+  back into `Dir jump` would recreate the shape that let `Alt+C` hide behind `Alt+Z`'s needle
+  for years. The pwsh needle greps the **`Set-PsFzfOption` argument**, not the chord string:
+  `Alt+c` also appears on the lazy-load stub's line, so a chord match would stay green if the
+  real binding were deleted.
+- **`core status --deep` — verify the COMMITTED `core/` against upstream, not just against
+  HEAD (#797).** The existing Integrity row compares the **worktree** to HEAD: it catches the
+  hazard operators actually hit (a hand-edit the next `make sync` clobbers) and is offline and
+  instant, which is most of `core status`'s value. It cannot catch an edit that was
+  **committed** — a bad `git subtree pull`, a hand-edit that got committed, a conflict resolved
+  wrongly. `--deep` fetches the pinned `core_sha` and answers that half.
+  **Tree OIDs, not a file-by-file diff.** `core-integrity.sh` already frames the question as
+  _"the git tree object of `HEAD:core`"_, and git trees are content-addressed — so an OID
+  computed in the fetched clone equals the local one exactly when the content does. No
+  materialisation, no `checkout-index`, and no diff binary (#572).
+  **The filter comes from the fetched commit, never from anything vendored.** #676 removed
+  `core-vendor.sh` from the vendor set because a gate resolving trees in Core's object store
+  cannot run in a repo that has none; reading it out of the commit just fetched sidesteps that,
+  and a `core_sha` predating the allowlist carries no such file, so the comparison falls
+  through to the whole tree and spans the migration with no flag day.
+  **Opt-in, and never on the default path** — it is the only row that touches the network, and
+  it carries a 20s ceiling. It **degrades, never errors**: offline, no git, a sha upstream will
+  not serve → a stated `unverifiable` and exit 0. The one exception is a malformed `core.lock`,
+  which is `broken`: a `core_sha` that is not 40 hex characters is a defect in the checkout,
+  not a fact about the network, and reporting it as "could not check" would launder it.
+  `--json` grows `.integrity.deep` as a **sibling** key with its own token set
+  (`verified`/`differs`/`broken`/`na`/`unverifiable`), leaving `.integrity.status` untouched —
+  the never-widen rule `_core_doctor_json` established. It is `null` when `--deep` was not
+  asked for, so "we did not look" stays distinguishable from "we looked and it was fine".
+- **`gen-theme.sh` reaches `dotfiles-MacBook`'s sketchybar palette, so the last hand-authored
+  copy of the Tokyo Night values is generated (#857).** `theme/palette.toml` is meant to be the
+  only place a hex is authored — the rule `CLAUDE.md` states and `audit-core.sh` §9d enforces.
+  `sketchybar/colors.sh` sat outside it entirely: no `core:theme:gen` block, so §9d had never
+  looked at it, held in step with Core by its own third line reading _"matched to
+  core/starship + core/tmux"_. That is the construction #693 and #682 exist to end, and #679's
+  own note (_"a comment is not a gate"_) was written about this very palette.
+  **Nothing drifted.** All twelve values already agreed with the palette, verified before and
+  after — this is pure gating, which is the good moment for it. A hand-edited hex in the bar
+  now exits 1 where previously nothing anywhere read the file.
+  The registry gained a third column naming the sibling repo a row's path is relative to
+  (empty = Core, which is every pre-existing row), and `--fleet DIR` says where the siblings
+  live — defaulting to Core's parent, the convention `gen-porting-matrix.sh` and
+  `parity-check.sh` already use. `emit_sketchybar_colors` renders sketchybar's `0xAARRGGBB`
+  form, with the alpha **per entry** rather than constant: the bar background is deliberately
+  translucent (`0xee`) over the storm black.
+  **An absent sibling is a reported skip, never a silent pass.** `--check` returns **3** and
+  names the repo it could not open; §9d classifies that through `skip_env`, the way §9h and §9i
+  already classify theirs, so `--strict` reads it as "clone the sibling" rather than "install a
+  tool". Real drift outranks it — 3 is only returned when nothing else went wrong — and that
+  precedence is pinned by a test, because a gate that reported the environment while a defect
+  sat in the tree would be worse than one that reported neither.
+
+### Changed
+
+- **`dotfiles-Windows`' zebar palette is NOT covered by #857, and the reason is worth
+  recording.** The marker grammar is `#`-comment-only —
+  `^[[:space:]]*#[[:space:]]core:theme:gen …` — which every current consumer satisfies (toml,
+  yml, zsh, sh, conf). CSS has no `#` comment, so `styles.css` cannot carry a marker at all.
+  The issue's own scope note asked whether the **renderer** set covered both forms; the actual
+  obstacle is one layer down, in the grammar that `marker_id`, `marker_indent`, preflight and
+  #906's reverse scan all share. Split out rather than bolted on.
+
+### Fixed
+
+- **`PORTING-MATRIX.md`'s `fleet-versions` table was the one generated block that was not a
+  prettier fixed point, so two gates disagreed about it (#836).** `gen-porting-matrix.sh`'s own
+  header states the rule — markdown is emitted in prettier's **aligned** form because conform
+  runs prettierd on save, _"so an unpadded table would be re-padded on the next save and read
+  as drift"_ — and `_table` exists to do it. `render_fleet_versions` (#914) printed raw
+  `printf '| %s | … |'` rows instead, bypassing it.
+  The consequence was a loop, not a cosmetic wart: open `PORTING-MATRIX.md` in Core's own
+  nvim, save, and prettierd re-pads the block; §9h then calls that drift; `make
+  gen-porting-matrix` puts it back unpadded; prettierd re-pads it again. Each gate correct on
+  its own terms. `prettier --check` now reports the file clean and `--check` is green on the
+  same bytes.
+  **This supersedes what #836 recorded.** That issue described "two pre-existing non-fixed-point
+  spots in the hand-written prose … unrelated to the generated regions". Both prose spots are
+  gone, and every remaining complaint was inside a generated block that did not exist when the
+  issue was filed. Three of #836's five items had likewise been closed in passing — the
+  openSUSE `uv` cell now carries its ²¹ mark, `_CORE_DOCTOR_OPTIN` is gated by §9p plus
+  `test/65-functions.sh`, and `dotfiles-Debian`'s workflow no longer hard-codes a footnote
+  number.
+  The regression guard asserts alignment **without prettier**, which the suite cannot depend
+  on: in an aligned table every row of a block renders to the same width, so one unpadded row
+  shows up as a second distinct width. Counted in code points rather than bytes, because the
+  packages table's superscripts would make a byte count call that table ragged the moment the
+  helper is reused. Reverting the generator gives 5 distinct widths and reds.
+  The fleet-versions row assertions also stop matching fixed strings: padding widths move
+  whenever any value in a column changes length, so the test now asserts **cells**, which is
+  what it always meant.
+
+- **The freshness bot's `fleet-versions` job could never finish on a runner (#917).** #914 added
+  a job that re-probes the recorded fleet package versions, writes
+  `scripts/fleet-package-versions.tsv`, then regenerates `PORTING-MATRIX.md` from it. The
+  regeneration reads the **sibling OS checkouts**, defaulting to this repo's parent directory —
+  which on a CI runner is empty. Its first scheduled run probed all 16 rows successfully and
+  then died:
+  `gen-porting-matrix: not checked out under /home/runner/work/dotfiles-core: … !! regeneration failed`.
+  The job now clones the fleet first, public/anonymous/shallow — the idiom `parity-check.yml`
+  already uses — and the list comes from `scripts/os-repos.txt` rather than being spelled in the
+  workflow, because that file is the one place fleet membership lives and a second copy in YAML
+  is the kind that goes stale unnoticed. `update-fleet-versions.sh` gained `--fleet DIR` to pass
+  it through.
+  **Two smaller defects were underneath it.** The updater collapsed every non-zero exit from the
+  generator into one message, discarding the split `gen-porting-matrix.sh` goes out of its way
+  to make — exit **3** for "the fleet is not here" versus **2** for a structural fault — the same
+  split `audit-core.sh` §9h relies on to record an absent fleet as an environment skip rather
+  than a defect. And it wrote the TSV **before** regenerating, so a failed regeneration left the
+  tree carrying a new TSV against a stale matrix: drift that reds §9h for the next person who
+  runs it beside the fleet. The write is now staged behind a backup and rolled back if the
+  matrix cannot follow it, so the two halves of one artifact move together or not at all.
+
+## [v7.1.2] - 2026-09-07
+
+### Fixed
+
+- **v7.1.1 was staged and never published — this release carries its content.** The cut promoted an empty `[Unreleased]`, because #920's entries had been filed under `[v7.1.0]` by mistake and the section they should have landed in was bare. `tag-release.sh` refused to tag it: `release.yml` builds the Release body from that section, and an empty body on an immutable tag burns the version. No `v7.1.1` tag was ever created and no repo vendored it, so the number is simply skipped — the same outcome `RELEASE-RUNBOOK.md` records for v4.11.0. The two entries below are unchanged.
+
+- **`maint-status` reported a clean listing on a box where nothing was installed (#918).** Its
+  systemd arm ran `list-timers` (header + `0 timers listed` on **stdout**, exit 0) and
+  `status` (`Unit … could not be found` on **stderr**, discarded by `2>/dev/null`). The one
+  call that knew the unit was missing was the one whose output was thrown away, so the arm
+  rendered output indistinguishable from a healthy box.
+  Found on a live Proxmox node: `maint-install` had written nothing, both unit files were
+  absent, `is-enabled` said `not-found`, there was no crontab entry — and `maint-status`
+  looked fine. The operator reasonably believed the daily run was scheduled.
+  **The bug is an asymmetry, not an oversight in one line.** `launchd` has carried
+  `|| echo "not loaded"` and `cron` `|| echo "no cron entry"` all along; **systemd was the
+  only arm of the three without an absence branch**, and it is the arm Debian, Fedora, Arch,
+  openSUSE, Defense and Offense all take.
+  It now reports **three** distinguishable states, because they fail independently and
+  `list-timers` renders all of them as the same empty output: no `SCHEDULER_UNIT_DIR`
+  declared (nowhere to write — #763's rule), declared but no unit file (not installed), and
+  installed but not enabled (exists, will never fire). Naming only the second would have
+  pointed at the wrong repair for the other two.
+  The same failure family as #829, where `nvim --headless` exited 0 over a session in which
+  nothing ran: a status command that cannot report absence turns an unanswered question into
+  a wrong answer, and the next signal is noticing weeks later that nothing has updated.
+
+- **A maint step whose output lacked a trailing newline swallowed the front of the next log
+  record — including its `✗` (#919).** `log()` used `echo`, which emits a trailing newline
+  but no **leading** one, so a record only began on a fresh line if whatever wrote last
+  happened to end with one. `step()` pipes each command's raw output into `$LOG` — through
+  `tee` on the tty arm, `>>` on the scheduled one — and neither can promise that. Observed
+  on a live box as `Successfully updated 1 registry.2026-09-07 12:17:26  ✓ neovim: …`.
+  Harmless for a `✓`. For a `✗` it moves the **only** record that anything failed out of
+  column 0, where a timestamp-anchored scan and an operator's eye both miss it — and
+  `step()` deliberately continues past failures with the process still exiting 0, so that
+  log line is the entire error contract. **Not foreground-only**: the scheduled arm has the
+  same shape, so an unattended 3am run corrupts its log with nobody watching.
+  Fixed in `log()` rather than `step()`, because `step()` is not the only writer (the mise
+  bump probe and the zsh-plugin loop also append) and `log()` is the one place every record
+  passes through. The newline goes to the **file only** — the terminal's column is not
+  knowable, and at the start of a run the log may end mid-line from a previous run while the
+  terminal is fresh, so emitting to both would print a spurious blank line every time. The
+  guard is conditional, asserted by a case that fails if consecutive records ever gain a
+  blank line between them.
+
+## [v7.1.0] - 2026-09-06
+
+### Added
+
+- **`scripts/fleet-vendor-guidance.sh` — the vendoring hint every repo prints was wrong in
+  eight of nine, and one repo had been right the whole time.** When `core/` is missing or
+  half-vendored, each OS repo prints a hint. Seven printed
+  `git subtree add … main --squash` to create and `git subtree pull` to update. A branch is
+  not the commit the fan-out pins, so `core-integrity` reports the fresh repo as **TAMPERED**
+  before it has done anything wrong; `subtree pull` moves `core/` without `core.lock` and
+  merges upstream's whole tree rather than the vendor set (#676). The hint fires precisely
+  when someone is already repairing a broken clone, so it handed them the two commands that
+  make it worse. `dotfiles-Defense` shipped the same text in a **weekly workflow** that files
+  a drift issue, pointing at `git subtree pull` and a `make core-lock` target that repo does
+  not define.
+  **The finding is not that eight repos were wrong — it is that the fix existed and did not
+  propagate.** `dotfiles-MacBook` has carried "take the RELEASED tag (never main, or
+  core-integrity reports the fresh subtree as TAMPERED)" for years, and nothing read the
+  other eight to notice they disagreed. Then MacBook's own hint went stale at
+  `refs/tags/v4` against a v7 fleet, landing in the same TAMPERED state its warning exists to
+  prevent: correct advice, defeated by a hardcoded number nothing checked.
+  So the register asserts the guidance is **right** (a tag not a branch — `branch`; the
+  moving major tag not a point tag — `non-major-tag`; `add` not `pull` — `subtree-pull`) and
+  **current** (`stale-vN`, against a major **derived from `core.version` at run time**, so the
+  day Core cuts v8 every stale `v7` hint in the fleet reports itself instead of waiting to be
+  discovered). Each defect class gets its own label, because a register that says "wrong"
+  without saying how is one nobody acts on.
+  Two scoping decisions are load-bearing. It matches **`--prefix=core` only**: `git subtree`
+  is not banned fleet-wide, and `dotfiles-Offense` vendors `offensive/companion` from
+  `dotgibson/htpx`, which genuinely is a subtree whose `sync-companion.sh` runs `subtree pull`
+  on purpose — flagging it would train people to ignore the gate. And it matches **commands,
+  not prose**, since these repos discuss `git subtree pull` correctly and constantly; the
+  discriminator is a `--prefix` naming `core`.
+  Wired as `make fleet-vendor-guidance` and as an advisory §5h section of `audit-core.sh`,
+  alongside the coverage, vocabulary and release-trigger registers — advisory for their
+  reason, that a sibling can drift without Core changing. **Core counts its own row but not
+  toward the sibling total**: it is the repo the script lives in, so it is always present, and
+  a naive count would report "every hint is current" off `VENDORING.md` alone while reading no
+  fleet at all — the green-because-absent result `skip_env` exists to avoid.
+  Green on arrival across all ten repos, following the fleet sweep in
+  dotgibson/dotfiles-Arch#158.
+
+- **`audit-core.sh` §9p — `TOOLS_OPTIN` was the third copy of one set, and the only ungated
+  one (#890, out of #836).** `PORTING-MATRIX.md`'s ²¹ marks are the human contract; Core's
+  `_CORE_DOCTOR_OPTIN` is the **row-level** set, already re-derived and asserted by
+  `test/65-functions.sh`; each OS repo's `TOOLS_OPTIN` carries the **cell-level** marks and
+  was checked by nothing. **The miss already happened and was found by eye**: `uv` is in
+  `_CORE_DOCTOR_WIRED`, `dotfiles-openSUSE` installs none and declared no `TOOLS_OPTIN`, so
+  it fell back to Core's default — which does not list `uv` — and `core-doctor` rendered a
+  false `✗` on every openSUSE box.
+  The rule is exact, and the fleet already satisfies it: _a repo whose matrix column carries
+  cell-level ²¹ must declare `TOOLS_OPTIN` as Core's row-level set **plus** those tools; a
+  repo with no cell-level mark may omit it_. The "plus" is the whole set repeated, because a
+  declared list **replaces** the default rather than adding to it — declaring only the delta
+  would trade one false `✗` for nine, which is its own test case.
+  **Blocking, unlike §9o**, and the difference is the fleet's state rather than a change of
+  heart: every covered repo passes today, so it can red on a regression without reddening
+  anything that exists.
+  Two maps are **explicit because neither is derivable**, and both had a trap behind them.
+  `Kali (apt)` and `Debian/Ubuntu` are two columns of **one repo**, so a header-to-directory
+  guess would invent a `dotfiles-Kali` or drop Kali's marks. And a parenthetical in the Tool
+  cell is not reliably a binary name — `jujutsu (jj)` is an alias, `op (1Password)` is a
+  description — so an unknown one is **reported rather than guessed at**. The derivation also
+  stops after the first table: footnote 21 carries a coverage table of its own whose first
+  column is backticked tool names (`PORTING-MATRIX.md:653`), and a scan that stays armed
+  sweeps `` `gping` `` in twice and invents a flag. Both traps are asserted, and both were
+  live bugs in the first draft — caught by running it against the real fleet rather than
+  against fixtures. Five repos, not nine: `dotfiles-MacBook`, `-Fedora`, `-Offense` and
+  `-Defense` have no column, so the gate is **silent** about them rather than inventing a
+  verdict for a repo the matrix cannot see.
+- **`audit-core.sh` §9o — `core/` described as a `git subtree` is a checked fact now (#891,
+  the gate #774 asked for).** #587 replaced the fan-out's `git subtree pull --squash` with a
+  pinned fetch plus `git read-tree --prefix=core/`; #668 retired the framing from Core's docs;
+  #774 swept the eight OS repos' `CLAUDE.md` by hand. This is what makes the next recurrence
+  visible. The framing matters because it is what leads a reader to reach for
+  `git subtree pull`, which moves `core/` but **not** `core.lock` and leaves `core-integrity`
+  reporting `TAMPERED` — precisely what `VENDORING.md:154` forbids.
+  **Running it once found twenty-one more sites.** #774 scoped itself to `CLAUDE.md`; the
+  same stale claim is live in `README.md`, `CONTRIBUTING.md`, `SECURITY.md` and the PR
+  templates across **all nine repos** — including one line in `dotfiles-Defense` that manages
+  to say both, calling `core/` _"a vendored subtree, materialized by dotfiles-core's own"_.
+  A hand sweep scoped to one filename missed them precisely because it was scoped to one
+  filename, which is the whole argument for the gate.
+  Those 21 landed as nine PRs in the same pass, so this ships **blocking** rather than
+  advisory — and the flip was made against the **tree**, not the PR list: re-checked against
+  every repo's `origin/main` (0 of 21 remaining, nine repos), because a repo can regain a line
+  and an environment skip with no siblings cloned looks exactly like a pass. **Keyed on the claim, not the token**, and that is forced rather than fastidious: two
+  `git subtree` mentions in `dotfiles-Offense` are correct — one of them a sentence arguing
+  this gate's own position, the other the `offensive/companion` subtree, which genuinely is
+  one — and a blanket scan would red both. Nine cases, every fixture **real text**: the
+  positives lifted from the repos #774 corrected, the negatives from what replaced them.
+  Stated limit, because a gate that overstates its reach is the defect it exists to prevent:
+  the **prohibition** shape (`dotfiles-MacBook`'s old _"a manual `git subtree pull` is not
+  supported"_) is invisible to it, since `core/` follows `subtree` there rather than being its
+  subject — and separating that from a legitimately negative sentence needs semantics a line
+  matcher does not have.
+- **The `HAVE_*` contract is enforced caller-side now, so direction 2 is not advisory
+  (#866).** `audit-core.sh` §5j direction 2 — _no OS or role repo reads a Core `HAVE_*` flag
+  `PORTABILITY.md` §5 does not declare_ — **never fired in any CI**. Core's own CI checks out
+  this repo alone, so it recorded an environment skip on every run (the right posture, the
+  same one §5f and §5h take), which left it exercised only by a maintainer's local
+  `make audit`. So an OS-repo PR could add `${HAVE_LNAV:-}` — a flag Core no longer sets —
+  and merge green, with the break surfacing later as a shell function quietly not firing:
+  exactly the failure #694 existed to prevent, one repo over.
+  The blocker was transport. The rule has lived in `_core_have_read_hits` for a while, with
+  thirteen fixtures; what a caller could not have was the **declared table**, since
+  `PORTABILITY.md` is not vendored. Of the three routes #866 weighed, this takes the one it
+  called the house idiom: **`scripts/gen-have-api.sh` renders §5's machine-readable half into
+  `zsh/have-api.txt`**, which _is_ vendored. Vendoring the doc itself would have been a
+  `core.vendor` allowlist change — which `V5-PROPOSAL.md` §4 treats as a major-version
+  concern of its own — to ship 270 lines of prose the OS repos have never needed; declaring
+  it in `common.sh` needed no generator but inverts _"the doc is the contract"_, which #860
+  deliberately chose. So the doc stays authoritative and only the part a gate reads travels.
+  **The new gate guards the twin, not the rule**: §5m fails when `have-api.txt` and §5's
+  table drift, because two parsers for one table is the defect one level up from the one
+  this closes — and a test asserts the generator's awk is **character-identical** to §5j's
+  rather than merely equivalent, since equivalence holds right up until someone "clarifies"
+  one copy. The refusal to render an **empty** contract is load-bearing in the opposite
+  direction from §5j's: an empty twin would mark every downstream read undeclared and red
+  nine repos at once, for a defect in Core.
+  **The leg lands warning-first**, as #866's adoption note asks and as the block-duplication
+  leg did: callers pin a moving major, so every OS repo sees it the moment auto-tag moves,
+  including a repo with a branch in flight that predates the rule. Verified clean across all
+  nine repos first — the only cross-repo read is `HAVE_ATUIN`, which §5 declares — and
+  verified to fire on an injected `${HAVE_LNAV:-}`. A caller whose `core/` predates the file
+  is told to sync rather than judged against an allowlist it never received.
+
+- **`audit-core.sh` §9n — the fleet's caller pins are checked now, not remembered (#804).** The
+  v5 → v6 caller sweep was **45 pins across 8 repos, done entirely by hand**, and nothing
+  would have reported a repo that was missed. Two gates looked adjacent and neither covered
+  it: §8a's `_core_workflow_ref_hits` is called as `. "$major"`, so its scope is **Core's own**
+  `.github/workflows/`; `fleet-drift` reads each repo's recorded `core.lock` provenance, a
+  different axis entirely. #736 predicted this and expected #672 to close it — #672 closed as
+  _"done and now gated"_, but the gating it refers to is §8a. So the fleet half was never
+  covered by anything.
+  **A missed repo is worse than an ordinary stale pin**: it runs the _outgoing_ major's
+  reusable workflows, and on a major that changes what `core-integrity` expects — #676 is
+  exactly one — its CI reports `TAMPERED` against a tree nobody touched and its fan-out PR
+  cannot merge. It is also self-healing in the **wrong** direction, staying quiet until the
+  pinned workflow is deleted or diverges, so the failure surfaces long after the release that
+  caused it.
+  `_core_caller_pin_hits` is the third half of a check that had two: §8a reads `ref:` keys,
+  §8b reads comment examples, and this reads the live `uses:` an OS repo actually executes.
+  It shares the sibling matcher exactly — owner plus left boundary, so `notdotgibson/…` and
+  `someone/not-dotfiles-core/…` are not judged — and **only `@v<digits>` is judged**:
+  `dotfiles-MacBook` pins by SHA on purpose, and answering "which pinning style" is
+  `check-modern.sh`'s job, not a second opinion here. Nine cases, and the sharpest drives all
+  three helpers over one fixture to assert that a stale live caller is invisible to both
+  siblings and visible only to this one — #804's gap stated as an assertion rather than as
+  prose. `RELEASE-RUNBOOK.md` §2 now says the sweep is checked, and records that
+  `dotfiles-Windows` stays a hand check **because** it is not in `scripts/os-repos.txt` —
+  widening the gate past the fleet list would put the list and the gate in disagreement, and
+  #805 is what that blind spot costs when nobody checks it.
+- **`audit-core.sh` §9m — the fan-out count is a gate now, not a number five files got wrong
+  (#770).** `scripts/os-repos.txt` is the canonical fleet list and its own header says so
+  (_"THIS FILE IS THE ONLY EDIT"_), but nothing read it against the prose that states how many
+  repos a Core change reaches. Five sites said **eight** against ~20 saying nine, and two of
+  the five were Core files — so the wrong number was replicated nine ways on every sync. #668
+  had found one of them a year earlier and _deliberately left it_, because correcting one of
+  several inconsistent sites makes the tree no more correct. That is the argument for a gate.
+  **Keyed on the CLAIM, not the number.** Three different numbers are correct here about three
+  different sets — 9 Core-vendoring, 8 OS-native (including `dotfiles-Windows`, which vendors
+  nothing), 11 for the whole system — so "eight" was never simply a stale nine: it is someone
+  correctly counting OS repos and attaching it to the **fan-out**, which is a different set. A
+  check on the bare number would red on `85-escalation.sh`'s _"eight repos rely on sudo-first"_
+  (nine minus Alpine) and on #775's _"eleven defects across eight repos"_ (the lint-call
+  callers) — noise, and noise is how a check teaches the fleet to ignore it. So
+  `_core_fanout_count_hits` fires only where a **fan-out verb governs the count**. Measured
+  against the tree: 23 such claims, and exactly the two genuine defects among them.
+  **It carries one line of memory**, because that is how the `ci.yml` survivor hid — the verb
+  on one comment line, `8 repos` on the next, so a line-based check read neither half as a
+  claim while a hand-sweep looked straight at it. The finding is reported against the line
+  holding the **number**, which is the line an author edits. `CHANGELOG*`/`V*-PROPOSAL.md` are
+  excluded (a historical record is correct for when it was written), untracked files are not
+  judged, and a per-line `# core:fanout-fixture` marker lets `test/90-policy-gates.sh` hold the
+  wrong claims verbatim — the trap that once made `_core_make_gate_hits` report Core as the
+  repo missing its own rule. Thirteen cases, and the negative ones carry as much weight as the
+  positive: they are the legitimate other-set lines, copied out of the tree.
+
+- **`blib_resolve_su --prefer TOOL` — the escalator order is not a universal fact (#867).**
+  `blib_resolve_su` has resolved sudo-then-doas since it was written, which is right for eight
+  repos and **wrong for `dotfiles-Alpine`**: its `os/alpine.capabilities` declares _"DOAS, NOT
+  SUDO — the Alpine fact this file exists to declare"_, and says so explicitly for "the rare
+  Alpine box that installs sudo as well". So adopting the helper there would have silently
+  inverted a declared OS fact — and the repo kept its hand-rolled probe instead. That probe is
+  `[[ "$(id -u)" -eq 0 ]]`, the arithmetic comparison an **empty** `id` output satisfies:
+  demonstrated here concluding "we are root" while running as an unprivileged user, which on
+  Alpine means every `apk add` runs unescalated. **A helper the fleet cannot adopt without a
+  behaviour change is a helper the fleet does not adopt**, so this is the prerequisite for
+  closing that gap rather than a convenience. `--prefer` puts a named tool at the front of the
+  same `_blib_su_path` discipline as the defaults — absolute path, real executable, never a
+  shell function — so `--prefer pkexec` works too, and a preference that is absent falls back
+  rather than failing. The argument parse became a real loop in the process: it read only
+  `$1`, so `--prefer doas --require` would have dropped the requirement, and an unknown flag
+  now returns 2 instead of being ignored — a mistyped `--require` silently downgrading to a
+  warning is the direction that hurts. Six cases in `test/85-escalation.sh`, including the
+  default order itself, since eight repos depend on sudo-first and nothing else pinned it.
+  `VENDORING.md`'s helper table records when to reach for it.
+- **`_core_make_gate_hits` R5 — a local markdown gate must run the PINNED linter (#876).**
+  The Makefile-gate guard already had four rules, and `lint-call.yml`'s `make-gates` leg
+  already runs them against every caller — a skip that cannot skip, a check that cannot fail,
+  a blocking CI leg with no local mirror, and a scope narrower than the gate. #873 walked
+  straight past all four: six repos probed for a **global** `markdownlint-cli2` that nothing
+  in their bootstrap installs, so on an ordinary box the guard fired every time and the
+  target skipped — correctly, at exit 0, forever. R3 could not see it because the Makefile
+  plainly spelled the tool; R1 could not, because the skip was honest. **A local mirror of a
+  blocking gate that never runs is not a mirror**, and the four existing rules all judge a
+  target that runs. R5 judges _which_ linter runs: an invocation must carry
+  `markdownlint-cli2@` plus a version, because the gate installs `MARKDOWNLINT_VERSION` from
+  the vendored `core/scripts/tool-versions.env` and a global binary is whatever npm last put
+  there — so a rule that changes across a bump reds a required check against a green local
+  run. Proven on the real thing in both directions: R5 fires on all six pre-#873 Makefiles,
+  naming each repo's own target (`markdown`, `md`, `lint-md`), and is silent on all nine
+  post-#873 plus Core — **green on arrival**. Two deliberate exclusions, both the
+  prose-is-not-a-command rule `tool_runs` already applies fleet-wide: a comment naming the
+  bare binary it replaced is not an invocation (every converged recipe carries one, and a
+  gate that reds its own rationale gets turned off), and a _quoted_ invocation reads as prose
+  — which under-checks `dotfiles-MacBook`, the one repo that writes its pin that way, and is
+  pinned regardless. `test/90-policy-gates.sh` pins all of it, including the historically
+  honest pair: the post-#38 Debian recipe is clean under R1–R4 **and** a finding under R5,
+  which is exactly the eighteen months #873 spent invisible.
+
+- **`audit-core.sh` §5k — the bash 3.2 floor is a gate now, not ten comments (#874).**
+  `PORTABILITY.md` §1 has put the shell floor at bash 3.2 since it was written, because macOS
+  ships 2007's bash and the audit matrix runs a `macos-latest` leg. **Ten** scripts here carry
+  a comment saying so — `audit-core.sh`, `gen-theme.sh`, `gen-aliases.sh`, `parity-check.sh`,
+  `check-modern.sh`, `nvim-reachability.sh`, `update-plugins.sh`, `lib/common.sh`,
+  `lib/core-lock.sh`, `research/lib/atuin-db.sh`. Ten comments and zero checks, so the
+  convention was enforced only by a CI leg that answers in seventeen minutes, on one platform
+  of four, after the fact. #871 is what that costs: it added one `mapfile` call and **every**
+  local gate stayed green — the line is valid syntax so §3's `bash -n` passes, ShellCheck does
+  not model bash versions so §5 passes, the suite runs on bash 5 here so §10 passes — and the
+  ubuntu, alpine and arch legs passed too. macOS alone failed, and took the whole behavioural
+  section down with it (`pass 388 skip 17 fail 1`). §5k is four seconds and runs everywhere.
+  It enforces `PORTABILITY.md` §1's banned table **entry for entry**, so the doc and the gate
+  cannot disagree — the array-reading builtins, associative arrays, case-conversion expansion,
+  `&>>`, `|&` and `wait -n` — and the finding names the construct, because they fail
+  differently and two of them (`&>>`, which bash 3.2 parses as a control operator and so
+  **backgrounds** the command, and `wait -n`, which silently waits for _all_ jobs) fail with
+  no error at all. The judgment is one testable function, `_core_bash4_hits`
+  (`scripts/lib/common.sh`), driven by `test/20-scanners.sh` in both directions across
+  thirteen cases — the same split as the `_core_pipefail_hits` and `_core_return_trap_hits`
+  scanners beside it. **Green on arrival**: 92 tracked shell files, zero findings, which is
+  the property #748's ledger insists on. Three narrowings are deliberate and documented rather
+  than quietly absent, because a gate that fires on working code is one someone turns off:
+  comments are stripped (nine of those ten references are prose _about_ the rule, and a gate
+  that reds its own documentation would not survive the week); `typeset -A` is out of scope
+  because it is the **zsh** spelling and `test/65-functions.sh` alone embeds ten legitimate
+  `typeset -gA` lines for a zsh child; and `|&` requires a following space, because the bare
+  two-character sequence occurs five times in this tree inside awk regexes and bracket
+  expressions. `PORTABILITY.md` §1 now says the table is a gate and names what it
+  under-checks.
+
+- **The README hero gif is dated against the tape that renders it (`--check-render`, #698).**
+  #862 rewrote `assets/demo.tape` to film a `dotfiles-core` checkout — #698's first finding,
+  that the keystone repo's hero was shot inside a `dotfiles-MacBook` tree — and the tape has
+  been right ever since. **The gif was never re-rendered.** `assets/demo.gif` at HEAD is
+  byte-for-byte the blob committed on 2026-07-06, two months before that rewrite: it still
+  walks `~/code/dotfiles/dotfiles-MacBook` through `z dotfiles` and `core help`, commands the
+  current tape does not contain. `README.md`'s `[product-screenshot]` points at that file, so
+  the defect #698 was filed about is still on the front page.
+
+  Both gates were green over it, and correctly so — §9j compares the tape to
+  `assets/hero.tape.in`, §9k weighs the gif's bytes and checks it exists, and **nothing tied
+  the gif to the tape**. A generated script whose OUTPUT nobody dates is generated in name
+  only: the property `assets/README.md` advertises — "re-run the command after any prompt or
+  tooling change and the hero updates" — was the one thing neither gate checked.
+  `gen-hero-tape.sh --check-render` (`make check-hero-render`) now checks it, and names both
+  ends: `assets/demo.gif is STALE — rendered 51b691b (2026-07-06), but assets/demo.tape was
+  rewritten later 202d632 (2026-09-04)`.
+
+  **Git history is the clock, not mtime** — mtime does not survive a clone, so on a fresh CI
+  checkout every hero would date to the second it was written. The audit job already takes
+  `fetch-depth: 0`, and a tree without usable history SKIPS LOUDLY (exit 3) instead of passing
+  green because the evidence was absent, which is #821's standing lesson. The working tree
+  outranks history in both directions: an uncommitted gif was just rendered here and passes,
+  while a modified tape beside a clean gif is exactly the defect and fails.
+
+  **Deliberately not wired into `audit-core.sh` yet.** The check is correct and red today, and
+  greening it needs `vhs` on a host matching the row — so landing it as §9l is a one-block
+  follow-up once `assets/demo.gif` is re-rendered, rather than blocking every unrelated
+  `make sync` in the meantime.
+
+### Changed
+
+- **`PARITY.md` gives every claim its own row, so the coverage gate that was row-level is now
+  claim-level (#809, out of #682/#807).** `parity-check.sh` proved that every `aligned` row
+  had a needle. It did not prove that every claim _inside_ a row did — and a row whose cells
+  named several triggers was not forced to carry several needles. **That is exactly how
+  `Alt+C` survived**: `PARITY.md` claimed `Alt+Z` _and_ `Alt+C` while the needle tested only
+  `Alt+Z`, and the gate ran green for years. #807 removed the false claim; the mechanism that
+  let a row outgrow its needles was untouched.
+  **Fixed by moving the table, not the gate.** Word nav becomes two rows, and each utility
+  function and fuzzy-git verb becomes its own row — so row-level and claim-level coincide and
+  the existing one-to-one gate reaches every claim with **no new machinery**. 20 aligned rows
+  became 29; `CHECKS` row-keys move with them.
+  **The rejected alternative is recorded, because it looks like the obvious one.** #809
+  proposed declaring a claim **count** per row (`<!-- claims:2 -->`) and asserting it against
+  the needle count, and called it the option that "catches the widening case exactly". It does
+  not: the count only fires if whoever widens the cell also bumps it. Widen it and leave the
+  number alone — which is precisely what the `Alt+C` author did with the needle — and the gate
+  stays green. It gates count-vs-needles, not widening. Splitting rows instead makes the
+  natural editing act, _add a row_, the act that is already gated.
+  Still ungated, and now said plainly in both the file and the script instead of deferred to
+  an issue: a cell that grows a second trigger **in place**. Nothing short of a
+  machine-readable claim list catches that, and `PARITY.md` is written for people first — what
+  changed is that there is no longer a multi-claim row there to imitate.
+  Two rows keep several checks and are not multi-claim rows: **History search** and
+  **Maintenance**, where _one_ claim needs several pieces of evidence. The distinction is now
+  written down where the row-key convention is defined.
+  `90-policy-gates.sh`'s parity fixtures re-anchor from `Word nav` (a row this change splits)
+  onto `Autosuggest toggle`. A fixture whose anchor stops matching inserts nothing, leaves the
+  gate green, and passes every negative case for the wrong reason — so the anchor deliberately
+  sits on a row with no reason to move.
+
+### Fixed
+
+- **The maint runner's stdin-discipline claim counted one site and there were two, and three
+  network steps had no ceiling at all (#899, out of #820 F1/F4).** `maint/dotfiles-maint.sh`
+  is a file whose comments are its contract, and one of them said the `mise outdated` probe
+  was "the one command in the run that inherits the caller's stdin". It never was: the
+  zsh-plugin loop is not a `step()` call either, and its `git fetch`/`git pull` put **stdout
+  and stderr into `$LOG`** — invisible _and_ blocking, which the file itself calls the worst
+  shape available.
+  **The repair is not another `</dev/null`.** git asks for credentials on `/dev/tty`, not
+  stdin, so an EOF leaves the prompt exactly where it was. `export GIT_TERMINAL_PROMPT=0` is
+  what actually answers it, and it is set for the whole runner rather than per call site
+  because the git invocations are not all ours — TPM shells out to git for every plugin it
+  clones. Left honest rather than half-fixed: an SSH remote whose key wants a passphrase
+  prompts through **ssh**, which that variable does not reach; the new ceiling bounds it.
+  **F4 is a risk, and it is treated as one.** `step()`'s tty arm pipes through `tee`, which
+  returns only when _every_ writer closes the pipe — so a step leaving a background process
+  on stdout blocks `maint-run` after its own work is done, in the very command the tty arm
+  exists to stop looking wedged. Nobody has reproduced a specific step leaking the fd, so the
+  fix is a ceiling rather than a redesign of the mirror: `_to` on `brew cleanup` and the two
+  TPM steps (the likeliest to leave a tmux server holding the pipe), plus new
+  `MAINT_GIT_TIMEOUT` and `MAINT_TPM_TIMEOUT` knobs.
+  **The new test asserts an inventory in both directions, not three spot checks.** It derives
+  the set of `step()` calls with no ceiling and compares it to the set allowed to have none —
+  so a fourth unwrapped network step fails, and wrapping a listed one fails too. The four that
+  stay unbounded are declared with reasons: byte-compilation is local CPU, and `system:
+  refresh`/`upgrade`/`cleanup` are privileged package-manager **transactions**, where a
+  ceiling would trade a slow run for a half-configured box. Neither finding is reproducible in
+  the suite — F1's live case needs a remote demanding credentials, F4's needs a step that
+  actually leaks the fd — so the assertions are textual, and say so.
+- **`audit-core.sh` §1c walked other sessions' worktrees, so `make audit` reported 1002
+  findings about files no commit here owns (#905).** `_core_claude_untracked_hits` answers
+  "is a file sitting under `.claude/` that git will never ship" by walking the filesystem —
+  it has to, because its whole subject is the file `git status` refuses to mention. Claude
+  Code parks a full checkout at `.claude/worktrees/<name>/`, so the walk descended into
+  every other session's tree and reported all of it: `pass 431 skip 1 fail 1004`, of which
+  **1002 were other people's worktrees** and none were about the tree under test.
+  **This reds only where it is required to be green.** CI checks out the repo alone and has
+  no worktrees, so the gate passed on all four platforms while being unusable on a
+  maintainer's machine — the one place `RELEASE-RUNBOOK.md` §1.1 step 0 demands a green
+  `make audit` before a tag. The remedy each finding printed ("negate it in `.gitignore`")
+  was wrong twice over: those files are already tracked at their real path, and nothing in
+  this checkout can change a verdict about another one.
+  `_core_nested_worktrees` asks **git**, not the filesystem — `git worktree list
+  --porcelain` is the registry git maintains itself, so a vendored `core/` or a stray
+  directory cannot be mistaken for a checkout — and §1c `-prune`s what it names. Pruning
+  rather than filtering afterwards is the point: the walk spends a `git check-ignore` per
+  file, so descending into a worktree bought a thousand subprocesses to produce a thousand
+  wrong answers (3.1s → 0.02s on the real tree).
+  **Not `_audit_ls`, which is how #906 fixed the same blind spot one function over.** That
+  scan could switch to git-aware discovery because it hunts shippable consumers; this one
+  cannot, because every git-derived listing returns nothing for an ignored file and would
+  turn the gate green by seeing less. The two halves of #905 needed opposite fixes.
+  The behavioral cases assert **both directions against the same tree**: a hidden file
+  inside the nested worktree is not a finding, and the host's own hidden file still is —
+  so the cheap wrong answer (stop walking `.claude/`) fails rather than passing quietly.
+
+- **`gen-theme.sh`'s reverse scan walked the filesystem, so it audited other repositories
+  (found while auditing #904, never filed).** `preflight()`'s reverse half — the one that
+  catches a `core:theme:gen` marker the registry does not know about — discovered files with
+  `grep -r . --include=…`, excluding only `.git/` and `scripts/`. A filesystem walk does not
+  consult `.gitignore`, so it descended into `.claude/worktrees/`, where Claude Code parks a
+  full checkout per session: **57 phantom failures against a tracked tree with no drift at
+  all**, on any box with a worktree present.
+  The failure mode is the reason this is a `fix` and not a tidy-up. `make audit` printed
+  `gen-theme.sh --check could not run (exit 2) — the drift gate checked NOTHING this run`
+  and `the real tree has drifted — run: make gen-theme` **together**, and the second is
+  actively harmful advice: the tree had not drifted, and regenerating consumers from a scan
+  polluted by unrelated checkouts is worse than the gate not running at all.
+  The primitive was already here and the comment above the scan already **claimed** it —
+  "_audit_ls-style discovery so an UNTRACKED consumer about to be committed is caught too".
+  `_audit_ls` is `git ls-files` plus `git ls-files --others --exclude-standard`, which keeps
+  exactly the untracked-consumer property that motivates the scan while inheriting git's
+  exclusions (`.claude/*` is ignored). The code was imitating its own comment.
+  Note what this is **not**: a switch to plain `git ls-files`, which lists only TRACKED files
+  and would silently drop that property — trading a loud wrong answer for a quiet one. The
+  new `_theme_scan_files` therefore keeps a filesystem fallback, and that fallback is **not**
+  belt-and-braces: `scripts/test/40-gen-theme-aliases.sh` builds `$SANDBOX/themerepo` by hand
+  with no `git init`, so git-only discovery would enumerate zero files there and report
+  success — coverage loss reading as health, the exact failure this preflight exists to end.
+  The git path is taken only when the work-tree root **is** the directory being scanned, so a
+  fixture under a `$TMPDIR` that happens to sit inside another repo cannot inherit its list.
+  `audit-core.sh:1602` is the only other recursive walk in the gate scripts and does **not**
+  share the blind spot — it targets `$HERE/zsh`, a tracked subdirectory, not `.`.
+
+- **Two openSUSE claims in `PORTING-MATRIX.md`'s footnotes, from the
+  `/os-package-availability` routine (dotfiles-openSUSE#164).** Both are footnote prose, not
+  matrix cells, so nothing generated moved and no `make gen-porting-matrix` run is implied.
+  Both were re-verified against OBS's anonymous API before editing — it answers on **binary**
+  package names, which is what `zypper in` matches, so it is the index that decides these:
+  `.../_repository?binary=<name>`, returning a `<binary filename="…rpm" size="…"/>` on a hit
+  and a zero-size stub on a miss.
+  **Footnote ⁵ — the tree-sitter shared library is `libtree-sitter0_26`, not
+  `tree-sitter0_26`.** `binary=tree-sitter0_26` resolves on **none** of the three openSUSE
+  targets (Factory, and the Backports ∪ SLFO unions behind Leap 16.0 and 16.1);
+  `binary=libtree-sitter0_26` resolves on all three, at 0.26.8. Nothing installs the library,
+  so nothing was broken — but that footnote exists **precisely** to stop the next reader
+  reaching for a wrong name, with the dotfiles-openSUSE#113 autopsy (`tree-sitter-cli`, the
+  Arch/Alpine split name, cargo-built on every box for want of the right one) two sentences
+  above it. A signpost that hands the reader the same class of wrong name it is warning about
+  is worse than no signpost. The same word was wrong in `dotfiles-openSUSE`'s own
+  `install/packages.txt` comment, fixed there in the same pass.
+  **Footnote ¹⁰ — difftastic's `openSUSE` is Tumbleweed-only.** `binary=difftastic` resolves
+  on `openSUSE:Factory` and on **none** of the four Leap 16 sources (Backports SLE-16.0 and
+  SLE-16.1, SLFO 1.2 and 1.3), so on Leap the documented route is the footnote's own
+  `cargo install difftastic`, not `zypper`. The **cell** is right as it stands — the column is
+  Tumbleweed-named by the convention footnote ¹⁸ states — and the footnote is where the
+  qualification belongs; its neighbour ²⁴ already does exactly this for lnav, which is
+  Tumbleweed-only for the same reason and correctly labelled.
+
+- **Two silent-failure shapes in the gate scripts, from #820's shell review (F2, F3).** Both
+  reproduced before fixing, because a report is a claim until it is run.
+  **F2 — `gen-theme.sh`'s PARITY.md style guard anchored at column 0.** CommonMark allows one
+  to three leading spaces on a table row, so indenting PARITY.md's Theme row made
+  `grep -qE '^\| (Theme|FZF palette) '` go false — and because the block only fires _"when
+  PARITY.md exists AND names a style"_, the cross-repo style contract **stopped being checked
+  with `gen-theme --check` still green**. Silent-disable, not a false alarm, which is the
+  worse direction. It is exactly the bug #682 fixed in `parity-check.sh`'s own row parser, in
+  a sibling that did not get the memo. Four cases now pin both directions: 0–3 spaces is a
+  row, four is an indented code block and still ignored.
+  **F3 — `parity-check.sh` parsed every pipe table in the file.** It took `cap = $2` and
+  `status = $(NF - 1)` from any row and skipped only separators, so tabulating PARITY.md's
+  status vocabulary — prose today, valid Markdown, passes markdownlint — would parse
+  `aligned` as a capability. Reproduced: the old parser reported ``row `aligned` has status
+  `the` ``, on a **blocking, deliberately un-scope-guarded** gate, with a message pointing
+  nowhere near the cause. The header now **arms** the table rather than being skipped: a
+  table whose first column is not `Capability` is not a contract table.
+  Worth recording that the first fix for F3 **introduced a second bug of the same class** —
+  making a 4-space line clear the table state dropped every row after it, silently reducing
+  coverage. The existing case 7 caught it, which is the argument for pinning both directions
+  of a bound rather than only the one you are fixing.
+
+- **Five doc-consistency findings from #811's sweep, verified live before fixing.** The
+  routine reported nine; four had already been closed by work since (#885 took the
+  `tree-sitter-cli` hedge, the Gentoo `ouch` prose is past-tense and correct, and the
+  generated package-manager table self-corrected once #686 made it render from
+  `os/*.capabilities`). These five were still true:
+  **D7** — `PORTING-MATRIX.md`'s footnote 35 said Fedora's refresh is `dnf check-update`
+  while the **generated cell** two hundred lines above it and `fedora.capabilities` both say
+  `sudo dnf check-update`. The two halves of one file disagreed, which is the shape that
+  becomes possible once half a file is generated and half is not.
+  **D8** — footnote 37 explains at length why Gentoo's `count-pending` is a real resolve
+  rather than `eix -u`, and never says what the cell **is**: `gentoo-pkg-pending`, a wrapper
+  `dotfiles-Gentoo` ships. It is the one row whose declared value is a script rather than an
+  invocation, because the `-1` sentinel cannot be expressed as a pipeline.
+  **D5** — `PORTING-MATRIX.md` called Offense _"the one repo that isn't stamped from
+  Fedora"_ while two other sites in the same file correctly say Offense **and** macOS.
+  **D4** — `ARCHITECTURE.md`'s repo table gave `dotfiles-Offense` an _"apt OS layer"_. It has
+  no `os/` directory at all; it is a pure role layer taking its OS band from
+  `dotfiles-Debian`.
+  **D9** — `core.vendor`'s same-repo line citations had rotted. The report named two; there
+  were **four** — `zsh/30-functions.zsh:765` (actually `:1224`), `zsh/02-capabilities.zsh:114`
+  (`:126`), `zsh/55-maint.zsh:488,528` (`:462,503`) and `zsh/60-update.zsh:762` (`:526`). Paths
+  are what `audit-core.sh` §1e enforces, and every path was right; the line numbers are
+  checked by nobody, which is why they drift.
+
+- **Minted tokens carried the installation's full grant set; every consumer scopes its verbs
+  now (#830).** `repositories:` bounds **where** a token works and `permission-*` bounds
+  **what** it may do there — independent axes, and only the first was ever set. So the
+  `notify-web` dispatch held a token that could rewrite `dotfiles-web`'s workflows in order
+  to `POST` one `repository_dispatch`. All five mint steps are narrowed to what their job
+  actually calls:
+  `notify-web-call.yml` and `notify-web.yml` take **`contents: write`** and nothing else —
+  that is precisely what `POST /repos/…/dispatches` needs. `freshness.yml`'s two mints take
+  **`contents` + `pull-requests`**: they push a bump branch and open its PR, and they set
+  neither `owner:` nor `repositories:`, which already scopes them to this repository.
+  `sync-fanout.yml` takes **`contents` + `pull-requests` + `workflows`**, and keeps its
+  deliberately unbounded reach — the install list is the one place scope lives, and a second
+  copy of `scripts/os-repos.txt` there would drift and 403 a newly-added repo.
+  **`workflows: write` is the interesting one.** `sync-fanout` genuinely needs it: a sync
+  branch can carry `.github/workflows/*` pin moves and GitHub refuses the _whole_ push
+  without it. `freshness.yml` deliberately does **not** take it — a pin bump touches `zsh/`
+  and `nvim/lazy-lock.json`, never workflows, so if that ever changes the push fails loudly
+  rather than the token having quietly been able to rewrite CI all along. That asymmetry is
+  the point of scoping rather than pasting one block everywhere.
+  **Under-scoping fails loudly**, which is the failure mode to prefer here: a missing verb
+  is a 403 at the call site, never a silent downgrade. `GITHUB-APP-AUTH.md`'s two
+  known-gaps bullets said the opposite and are replaced by a per-consumer table; the
+  new-consumer template already told newcomers to scope, so it needed no change — it was
+  the existing consumers that had not caught up.
+
+- **`PORTING-MATRIX.md`: the openSUSE `uv` cell asserted a name for a package the repo does not
+  install, and the file was not a prettier fixed point (#836).** Two of the five findings that
+  issue parked while wiring the generator.
+  The `uv` row's openSUSE cell names `python3-uv` as an asserted literal in `PKG_ROWS`, but
+  `dotfiles-openSUSE/install/packages.txt` carries no `uv` at all — Arch, Alpine and Gentoo do
+  install theirs. So the cell now carries **²¹ ("available, not installed")**, which is the
+  convention the matrix already has for exactly this, and footnote 30 says so rather than
+  leaving the reader to infer it from a name that reads like an install. The derivation check
+  in `test/65-functions.sh` still passes because ²¹ here is **cell-level**, not row-level, and
+  a cell-level case belongs to the repo whose cell it is — the rule that array's own comment
+  states.
+  And the file is now a **prettier fixed point**, which it was not on `main`. That is not
+  cosmetic: Core's nvim formats markdown with prettierd on save, so anyone who opened this file
+  got a surprise 19-line reformat mixed into their diff — the mechanism that let the desktop
+  `PARITY.md` pair drift 3.5 KB apart in #693. Two of the three spots were **multi-line code
+  spans inside indented list items**, where prettier's de-indent silently changes what the span
+  contains; both are rewritten to single-line spans, so the fix removes the ambiguity rather
+  than accepting a reflow of the rendered text. The third was table padding around `✔`, now
+  accepted. `gen-porting-matrix.sh --check` and `prettier --check` are both green, and the
+  generator reproduces prettier's padding exactly — so the two cannot fight on the next
+  regeneration.
+- **`theme/palette.toml` said nobody consumes it; `dotfiles-Windows` has since 2026-08-31
+  (#798).** The file's header and `audit-core.sh`'s `META_ALLOWLIST` comment both justified
+  keeping it out of the shipped set with _"nothing symlinks it and no OS repo reads it out of
+  `core/`"_. That premise no longer holds: dotgibson/dotfiles-Windows#229 vendors **this
+  file** — `theme-sync.ps1` copies it beside a `theme/.core-ref` pinning the Core commit, CI
+  hash-gates the pair (`tests/Assert-ThemeParity.ps1`), and its own `gen-theme.ps1` renders
+  nine blocks across `powershell/core/` and `psmux/` from it. **Not** added to
+  `core.manifest`, which is what the issue asked about and offered to be argued out of: the
+  manifest is the set `sync-core.sh` materializes into each OS repo's `core/`, so a row there
+  would ship a generation-time input into nine trees where nothing reads it, in order to
+  describe a dependency held by the **one repo that has no `core/` at all**. That makes the
+  manifest less true, not more. The dependency is recorded where it can be acted on instead —
+  in the file's own header and the allowlist comment, both of which now say plainly that
+  moving or renaming the path **breaks a downstream CI gate**, which is a fleet contract
+  change and not a local refactor. `desktop/PARITY.shared.md` is the same shape and the
+  precedent. (Checked while here: Windows' pin `a85622e` is current — `theme/palette.toml`
+  has not moved since.)
+- **`PARITY.md`'s accent `gap` was right but imprecise (#798).** pwsh is no longer missing the
+  _primitive_: `Get-DotAccentSpec` (dotgibson/dotfiles-Windows#229) is generated from this
+  same palette — truecolor tier keyed on `$COLORTERM` exactly as `zsh/05-ui.zsh` does, both
+  raw-SGR and bare-spec forms mirroring Core's two rendering paths, and the 256-colour
+  fallbacks carried verbatim including their deliberate SGR-vs-spec disagreement. **Nothing
+  consumes it yet**, so the row stays a `gap` — this file's bar for `aligned` is that both
+  shells actually _render_ with the capability, not that both could. Promoting it would mean
+  a needle proving the function _exists_, which is the certifies-less-than-it-looks-like
+  shape that section exists to stop. What closes the row is a pwsh consumer, not another
+  assertion here; the note now says which.
+- **`new-os-repo.sh`'s pin floor was v4.1.0 and should have been v4.15.1 — the scaffold and
+  its own recipe disagreed (#851).** The floor existed for the `repos:` footer the recovery
+  verdict reads, which arrived in v4.1.0. But the scaffold **materializes** `core/`
+  (`core_vendor_materialize` — a plain tree with no subtree metadata), and releases v4.1.0
+  through v4.15.0 sync with `git subtree pull --squash`, which on such a tree dies with
+  `fatal: can't squash-merge: 'core' was never added` — **reproduced**, not inferred. So on
+  every pin in that range the registration command the scaffold **itself prints** could never
+  stamp `core.lock`. v4.15.1 is the first release whose `sync-core.sh` materializes
+  (`_sync_materialize_core`, _"replaces `git subtree pull --squash`"_); v4.15.0 still pulls —
+  confirmed by reading both tags. The constant is renamed `_footer_floor` → `_pin_floor`,
+  since it now encodes two constraints and the newer one binds, and the refusal message names
+  **the mechanism** rather than the footer: the old wording was true of v4.0.2 and false of
+  v4.10.0, and a refusal that misdiagnoses itself sends the reader to fix the wrong thing.
+  `v4.10.0` accordingly **moves sides** in `test/35-new-os-repo.sh`'s F7c lists, from accepted
+  to refused, which is the regression the case now pins. The floor is restated in `--help`,
+  the two stale in-script references, and the three recipe copies (`ARCHITECTURE.md`,
+  `VENDORING.md`, `PORTING-MATRIX.md`). The v7.0.0 entry's "since v4.1.0" line is **left
+  alone**: it was true when written, and the historical record is not the place to fix a
+  floor.
+- **Two generated claims in the scaffold overstated what they describe (#851).** The
+  generated README said `test.yml` "runs on every push"; its filter is
+  `branches: [main, master]`, so a feature-branch push with no PR open runs **nothing** — it
+  now says default-branch pushes and pull requests, and names the filter. And the generated
+  `test/check-links.sh` header said it "needs only bash", while its mise-seed assertion shells
+  out to `git hash-object` and the body uses `find`, `ls`, `readlink`, `cksum`, `awk`, `sort`
+  and `stat`. Both are true of any runner that could have cloned the repo, which is the point
+  worth making — so the header now says that, instead of a portability claim that is not quite
+  true.
+- **`core help` understated `core-whatsnew`'s interface — one of its two flags (#806).**
+  The verb takes `--full` **and** `--all` (`_core_usage` and `zsh/completions/_core-whatsnew`
+  both say so), but the cheat sheet's row keyed it `core-whatsnew [--full]` and the front
+  door's dispatch comment did the same. `aliases.md`'s row was the site the issue named, and
+  it is already right — #834 made that table _generated_ from the `_core_help` call, which
+  carries both flags — so the hand-written surfaces were the ones left behind, which is the
+  argument for generating them in the first place. **The flags moved to the description, not
+  into the key**, on purpose: `_core_help_render` sizes its key column to the widest key, so
+  spelling both out there would have shifted every row on the sheet eight columns right to
+  document one verb. The index already elides flags this way (`core-status`, whose real usage
+  takes `[--json]`), and the description now names both — strictly more than the key said.
+- **`PORTING-MATRIX.md` footnote 5: `tree-sitter-cli` is maintainer-needed on Gentoo, and the
+  arch claim was narrower than the truth (#780).** The footnote closes with its own standing
+  instruction — _"re-query this row on every stamp"_ — and this is that re-query, re-confirmed
+  against the live `.json` endpoint on 2026-09-06. `dev-util/tree-sitter-cli`'s `metadata.xml`
+  carries **no `<maintainer>` element at all**; availability is unchanged — 0.26.11 is still
+  stable and still clears the ≥ 0.26.1 floor — but orphaning is what precedes a treeclean, and
+  `dotfiles-Gentoo` already carries exactly this hedge on `w3m` and `lnav`. And "stable on
+  amd64" understated it: the keyword line is
+  `amd64 arm arm64 ~loong ~mips ppc ppc64 ~riscv ~s390 ~sparc x86`, so it reads as an
+  amd64-only guarantee while `dotfiles-Gentoo` is tightening exactly what it claims per-arch.
+  Two things added beyond the report: **0.26.12 exists but is `~`-keyworded on every arch**,
+  so a future reader does not "update" the claim to a version nothing has stabilised; and the
+  warning that `packages.gentoo.org`'s rendered arch table is unreliable — it reported
+  `app-shells/starship` as having no stable amd64 keyword where the ebuild says
+  `KEYWORDS="amd64 arm64"`. The `dotfiles-Gentoo` half is already done
+  (dotfiles-Gentoo#145), and its `packages.txt` comment points **here** for this half,
+  because `core/` is vendored read-only there and the same edit made in the OS repo is
+  overwritten on the next `make sync`.
+- **The recovery runbook's caller-discovery grep could not see Core's own caller (#832).**
+  `GITHUB-APP-AUTH.md`'s Recovery section — the incident path — tells the operator to
+  **derive** the caller list rather than trust a written one, and then handed them
+  `grep -rn 'notify-web-call.yml@' ../dotfiles-*/.github/workflows/`, which matches only the
+  **remote** `uses:` form. Core's own caller is **local**: `release.yml` reads
+  `uses: ./.github/workflows/notify-web-call.yml`, no `@`. Step 6 then says to use step 5's
+  derived list, so an operator following the procedure omitted Core's `release.yml` mapping
+  and the release-path dispatch lost its restored fallback the moment step 7 disabled the
+  App. **This was a defect in a fix**: the "derive it, do not freeze it" instruction was
+  itself added to close an earlier review finding, so the derivation was made _authoritative_
+  before it was made _correct_ — worse than the frozen list it replaced, because the next
+  step instructs the operator to trust it. Both commands now anchor on `^\s*uses:` and match
+  either form (which also skips the reusable's own documentation comment, not a caller), and
+  the step-2 visibility grep is held to the same standard. **Both commands are plain POSIX
+  BRE with two `-e` patterns, not one `-E` alternation**: the first draft used the
+  alternation and it did not match under **busybox grep**, which the Alpine audit leg caught
+  — and Alpine is a machine in this fleet, so it is a box someone could be running this
+  recovery from. A recovery command that works on the maintainer's laptop and not on Alpine
+  is the same class of defect as one that cannot see Core's own caller. **A derivation nothing exercises
+  is a frozen list that looks live**, so `test/90-policy-gates.sh` now reads the patterns
+  _out of the runbook_ and runs them against Core's own tree, asserting they find the caller
+  that is actually there — with Core's local caller asserted separately, so the check cannot
+  pass vacuously if that caller ever goes away. Verified: the old pattern fails it.
+- **`GITHUB-APP-MIGRATION.md`'s permission-status pointer led to a section that did not hold
+  it (#832).** The frozen record defers _"whether that is still true"_ about verb scope to
+  _What the fleet runs today_ — a section covering **repository** scope only, while the live
+  statement that consumers still inherit the installation's full grant set sat two sections
+  away under _Adding a new consumer_. A reader following the deferral could not determine
+  whether the historical limitation still applied, which is the one thing the deferral exists
+  to let them do. Fixed at the target rather than the pointer: _What the fleet runs today_
+  now carries **"Neither shape scopes verbs"** — the dimension the migration did not narrow,
+  still true, still tracked as #830 — so the section that claims to describe today stops
+  omitting it.
+- **Word nav's pwsh half stops being a skip — the gate's last unasserted row (#849).**
+  `scripts/parity-check.sh` carried two `-` sentinels, both on **Word nav**: pwsh got
+  `Ctrl+←/→` from a PSReadLine **default**, so there was no string to grep and the check
+  asserted Core's half and _reported_ pwsh's rather than inventing a needle that could not
+  fail. dotgibson/dotfiles-Windows#238 binds the chords explicitly, so both halves are now
+  real assertions — `count:2:-Key Ctrl+RightArrow -Function NextWord` and its `Ctrl+LeftArrow`
+  / `BackwardWord` mirror. **`count:2` is the point**, not decoration: a bare `-Key` under
+  `-EditMode Vi` binds the **Insert** table only, so a single binding would leave `vicmd`
+  resting on the very default the upstream fix exists to stop depending on — the mirror of
+  Core's own `bindkey -M viins` + `bindkey -M vicmd` pairs. pwsh binds `NextWord`, **not**
+  `ForwardWord`, and that is not drift: PSReadLine's `ForwardWord` moves to the _end_ of the
+  current word while `NextWord` moves to the _start_ of the next one, which is what zsh's
+  `forward-word` does. The row stays honestly `aligned`; only the function _name_ differs.
+  With its only user gone, **the sentinel machinery is retired with it** — the `pneedle == "-"`
+  branch, the `UNASSERTED` counter and its qualified summary, `_core_parity_verdict`'s
+  `ok-defaults` verdict and §9f's render arm for it. A verdict no run can return is a claim no
+  test can hold to account. `skip_note` itself stays: the NOTE skip class has live callers in
+  `gen-hero-tape.sh` and the bench gate, and `test/36-bootstrap-lib.sh`'s binding assertion
+  now points at one of those instead of the §9f call site it used to guard. The Windows-present
+  case in `test/90-policy-gates.sh` inverts accordingly: it now proves the run asserts **every**
+  pwsh half and skips none, where it used to prove it refused to certify two.
+- **The fleet's repo count contradicted itself — five sites said eight, the manifest says nine
+  (#770).** `CODEOWNERS:1`, `audit-core.sh`, `.github/workflows/ci.yml` and
+  `nvim/.../claudecode-nvim.lua` all described the fan-out set and were off by one
+  (`sync-core.sh:293`, the fifth, had already been corrected). Two of them are Core files, so
+  the wrong number reached nine repos on every sync. Fixed, and **the phrasing with them**:
+  the fan-out claims now read _"the nine **Core-vendoring** repos"_ rather than _"nine OS
+  repos"_, which is wrong in kind and not merely in count — two of the nine (`dotfiles-Offense`
+  and `dotfiles-Defense`) are **Role** repos, and that ambiguity is exactly what made the drift
+  self-renewing, since both numbers are right about something and the prose rarely said which.
+  `PORTING-MATRIX.md` already modelled the phrasing; it is now the fleet's. §9m above keeps it.
+- **`check-links.sh` verified `loader.zsh` and none of the modules it loads (#854).** The gate
+  asserted seven Core-owned links, including `.config/zsh/loader.zsh`, and — since #853 —
+  that each resolves to the _right_ file. But `blib_link_core` links the **whole** directory
+  (`for f in "$dotfiles"/core/zsh/*.zsh`), and the loader then globs `NN-*.zsh` in the
+  destination. So a bootstrap that wired `loader.zsh` and **none of the fragments** passed
+  with the loader having nothing to load — a shell that starts clean and is configured with
+  none of Core, certified as a healthy graph. `scripts/test-core.sh` already treats the
+  complete flat set as load-bearing, so the contract existed; the gate just did not check it.
+  **Derived, not listed**, and from the repo being checked rather than from Core's own tree:
+  a hardcoded list drifts every time a module is added — the argument the loader's own glob
+  and `test-core.sh`'s fragment glob already make — and the vendored `core/zsh` is right
+  there, which is what `blib_link_core` itself reads. An **empty** derivation is a finding in
+  its own right (exit 2, naming "nothing to load") rather than a quiet pass, because vacuous
+  is the state this closes. Five cases, and the fake bootstrap in the suite was **itself an
+  example of the incomplete graph** — it wired `loader.zsh` alone, and now runs
+  `blib_link_core`'s loop verbatim so the stub cannot drift from the linker it stands in for.
+  Verified against the fleet: `dotfiles-Fedora`, `-Offense` and `-Defense` each go from 7
+  links checked to **21, fourteen of them derived fragments**, all green.
+
+- **A linked-worktree OS repo was classified as "not cloned", and under `--strict` that skip
+  was exit 1 (#850).** `sync-core.sh` asked "is this a clone?" with `-d "$path/.git"` at three
+  sites — the staleness pre-flight, the parallel prefetch loop and the per-repo fan-out. A
+  linked worktree (and a submodule checkout) has a `.git` **file**, not a directory, so a
+  perfectly good target was skipped; once `--strict` (#848) turned a skip into a failure, a
+  targeted sync over a worktree checkout did not merely under-report, it **refused**. The
+  repository's established form is `-e`, and `resolve_repo_dir` — the helper every one of
+  these call sites goes through first — already carries the comment explaining why. Swept the
+  other three sites that ask the same question the same wrong way rather than fixing only the
+  two the report named: `audit-core.sh`'s secret-scan policy adoption and its os.capabilities
+  fleet coverage, and `scripts/fleet-coverage.sh`'s row loop, each of which would silently drop
+  a worktree sibling out of a fleet count. There is now no `-d "$…/.git"` left in `scripts/`.
+  `test/32-sync-core.sh` covers a real `git worktree add` target against `--strict`, asserting
+  both that the run exits 0 and that "not cloned" never appears — verified red against the
+  pre-fix script, which reports exactly the symptom in the report
+  (`– dotfiles-Worktree (not cloned at …)`, `rc=1`).
+- **The maint job's neovim step reported ✓ over a session in which nothing ran (#829).**
+  `nvim --headless` exits **0** when a `-c` command fails — the error goes to stderr and the
+  process still succeeds — so `step()` read a 0 and logged a green tick for a run that had
+  updated no plugins, no parsers and no registry. `step()` was not at fault:
+  `rc=${PIPESTATUS[0]}` is the right status to read; the problem was that the status carried
+  no information about whether the commands ran. On an Ubuntu 24.04 box whose apt `nvim` was
+  0.9.5, the config aborted at load on a 0.11+ option, `lazy.nvim` therefore never loaded,
+  `:Lazy! sync` did not exist — and the step had been green for as long as the editor had been
+  broken. It surfaced only because a stderr traceback happened to land in a terminal someone
+  was reading; under the systemd timer, which is the designed mode, nothing would ever have
+  shown it. **Every arm is now a `pcall` that records its failure, and a final `-c` turns a
+  non-empty record into a real exit status with `:cq`** — the documented way to make nvim exit
+  non-zero. The sentinel is fail-**closed**: an unset record means the setup `-c` itself never
+  ran, which is the same false green in a smaller box, so that counts as a failure too.
+  Reaches every OS repo that vendors Core, on every box, whatever the cause — a config error,
+  a missing plugin, a renamed command all produced the identical false ✓.
+- **`MasonUpdate` had never actually run in that step (#829).** mason.nvim is a _dependency_ of
+  nvim-lspconfig / conform / nvim-lint, every one of which loads on a buffer event that never
+  fires in a headless session — so `:MasonUpdate` did not exist there and `+silent! MasonUpdate`
+  swallowed the `E492` on every single run since the step was written. Found while making the
+  arms loud: with the failure recorded instead of silenced, the arm reds immediately. The step
+  now `require("mason")` first, pulling the plugin in through lazy's require shim so the command
+  exists; a live run confirms `Successfully updated 1 registry`. Same class as the `:TSUpdateSync`
+  note already in that block — a `silent!` that outlived the command it was protecting.
+  `test/73-maint-runner.sh` covers both directions against the **shipped** argv (extracted by
+  sourcing the real step invocation with `nvim` stubbed, so a hand-written copy cannot drift):
+  every arm runnable → 0, the `:Lazy` command absent → non-zero.
 
 ## [v7.0.0] - 2026-09-04
 
@@ -1656,341 +2934,3 @@ repo-meta and stays upstream:
   #679's theme generator would otherwise have carried dead config forward into the new
   mechanism. #682 remains open for its other two bugs (the unbound `Alt+C`, and
   `parity-check.sh`'s unproven one-to-one claim).
-
-## [v5.5.0] - 2026-08-30
-
-### Changed
-
-- **`atuin/config.toml` no longer pins `search_mode`, so a machine can finally choose it.**
-  The line asserted `"fuzzy"` — which is atuin's OWN default (`atuin default-config` ships
-  it commented out at that value), so it pinned a default rather than choosing anything.
-  What it DID do was shadow `ATUIN_SEARCH_MODE`, under the same precedence rule `[daemon]`
-  documents at length: atuin builds config as defaults → Environment → **file**, and the
-  later source wins, so any key present here beats the environment.
-
-  That blocked the one mode worth opting into. **`daemon-fuzzy`** routes interactive search
-  through the atuin daemon, and is meaningful only where that daemon runs — which Core
-  ships **off**, per machine, for the reasons already recorded in `[daemon]`. It cannot be
-  a fleet-wide assertion: even on a host that opted in, `os/alpine.zsh` deliberately leaves
-  the daemon off **inside containers**, and these repos target containers as much as hosts,
-  so a blanket `daemon-fuzzy` would apply on precisely the shells with no daemon to talk to.
-
-  **No host changes behaviour.** atuin still defaults to `"fuzzy"`, so an unset key and the
-  old assertion are the same thing everywhere — the difference is only that the override
-  now reaches. A machine running the daemon sets `ATUIN_SEARCH_MODE=daemon-fuzzy` from its
-  OS layer (`os/<os>.zsh`) or host layer (`99-local`), beside the `ATUIN_DAEMON__*` exports
-  that turned the daemon on.
-
-  This is the trap `[daemon]` already warned about, found in the block above it: _"The same
-  trap applies to any future per-machine key: if a machine is meant to override it via
-  `ATUIN_*`, it must not be written here."_ `search_mode` was written here.
-
-### Fixed
-
-- **`make publish` reported a network failure for a stale tag, and hid the evidence.**
-  `scripts/tag-release.sh` opened phase 2 with `git fetch -q --tags origin 2>/dev/null`.
-  The `vN` major alias is **force-moved to every release**, so any clone that missed one
-  carries a stale local `vN` — and a plain `git fetch --tags` REFUSES to move it
-  (`! [rejected] v5 -> v5 (would clobber existing tag)`), exits 1, and takes `publish`
-  down with it. Nothing was wrong with the network, but with stderr redirected to
-  `/dev/null` the only thing the operator saw was `could not fetch origin — publishing
-  needs the remote's view of main`, which points at exactly the wrong thing. Hit cutting
-  **v5.4.3**, on a clone whose `v4` and `v5` were both behind; the actual repair was a
-  one-line tag update.
-
-  The fetch now passes `--force` and no longer swallows stderr, so a real failure names
-  its cause (`Could not resolve host: …`) instead of wearing the generic message.
-  Forcing is correct rather than merely convenient: `vN` is a MOVING alias whose remote
-  value is authoritative by definition, so a local ref that disagrees is stale, never a
-  competing truth. Immutable `vX.Y.Z` release tags are unaffected — they never move, so
-  `--force` has nothing to overwrite there, and the tag ruleset forbids it regardless.
-
-  Verified both ways: with `v5` deliberately pointed at `v5.4.2`, the old fetch exits 1
-  and the new one exits 0 and realigns it, leaving `v5.4.2`/`v5.4.3` untouched; against
-  an unresolvable remote it still exits 1, now printing the reason.
-
-## [v5.4.3] - 2026-08-30
-
-### Added
-
-- **A gate for local gates that cannot do what their name says (#775).**
-  `scripts/lib/common.sh :: _core_make_gate_hits` reads a repo's `Makefile` and reports
-  three shapes, all found by hand across the fleet and none previously catchable:
-
-  - **A skip that cannot skip.** `command -v x || { echo "skipping"; exit 0; }` on one
-    recipe line, the tool on the next. `make` gives each recipe line its own shell, so the
-    `exit 0` ends only that line — the target announces a skip and then runs the missing
-    tool, exiting 127. Found in Debian, Fedora (×2), Offense (×3) and Defense (×2).
-  - **A check that cannot fail.** A checker ended with `;` before a success echo: the echo
-    runs regardless _and_ becomes the line's exit status, so findings print and the target
-    exits 0. openSUSE's `lint-sh` did this while its two siblings used `&&` and
-    `|| exit 1` — which is exactly why nobody looked at it.
-  - **A blocking CI leg with no local mirror.** A `.markdownlint.jsonc` that only CI ever
-    read, for a leg blocking since #592, plus the narrower case where the local target
-    globs `'*.md'` (top-level only) while the gate lints `git ls-files` recursively.
-
-  Rendered in two places, because the defect is in the callers and Core's audit can only
-  see Core: **§8d** of `audit-core.sh` keeps the authoring repo honest, and a new
-  **`make-gates`** leg in `lint-call.yml` judges each caller's own `Makefile`. Both drive
-  the shipped function rather than a copy — the discipline `_core_tool_skip_count`
-  records, where a test that re-implemented its subject stayed green while the defect it
-  existed to catch was fully reintroduced.
-
-  **Blocking**, and only because the fleet was cleared first. #592's markdown leg had to
-  ship advisory for a release because seven of nine callers would have gone red before a
-  maintainer could act; the nine #775 PRs merged while this was in review, so every
-  caller's `main` measures 0 and that staging is unnecessary here. The measurement is the
-  precondition, not a formality: a future rule that any caller fails must ship advisory
-  the way #592 did, because callers read `lint-call.yml` at the **moving** `@v5` tag and
-  meet a new rule the moment `auto-tag` moves — red on arrival, in a repo whose author
-  changed nothing. Recorded on the job so nobody loosens the rule to get past a red.
-
-  Three things worth recording about how it was built, because they are the reason to
-  trust it:
-
-  - **It found four defects the hand sweep missed** — Offense's `shellcheck` and `secrets`
-    (both exit 127 with the tool absent) and Defense's `core-check`, which is the worst of
-    the set: it prints its skip notice, runs `gh` anyway, and reports
-    `vendored core is 5.4.1, upstream is  — a sync from dotfiles-core is owed` from an
-    empty variable. A confidently wrong answer about fleet drift, not a crash.
-  - **The false positives shaped the rules more than the true ones.** A first draft used
-    "any `exit 0` before the last recipe line" and reported Alpine's `shell`, which guards
-    shellcheck and runs it _on the same line_ — a correct skip. It also flagged `lint-zsh`
-    and `zsh-syntax`, which handle failure with `|| exit 1` inside the loop. All three are
-    pinned as must-not-fire cases: a gate that cries wolf on working code teaches the
-    fleet to ignore it.
-  - **It was seen failing before being trusted.** The fixtures are the real pre-fix and
-    post-fix recipes copied verbatim, not synthetic approximations, and §8d was run
-    against a defect injected into Core's own `Makefile`. A guard for a historical defect
-    that is never run against that defect is the same category error it exists to fix.
-
-  The `audit-alpine` leg caught the guard doing the thing it hunts. Its markdownlint
-  reachability probe used `grep --exclude-dir` and `-I`, both GNU extensions; busybox grep
-  rejects the first, so the probe exited 2, that was read as "no mirror", and Core — the
-  repo that authors the rule — was reported as the one repo missing it. **A false finding
-  produced by an unsupported flag, in the gate whose entire subject is checks that answer
-  wrongly.** Neither flag was needed. The probe now also distinguishes "searched, absent"
-  from "could not search", and stays silent in the second case: unknown and absent are
-  different facts and only one is a defect. Pinned by a fixture that rejects those flags
-  exactly as busybox does, so a developer box catches it without an Alpine runner.
-
-  Complements, and does not replace, `dotfiles-MacBook/test/check-skip-guards.sh`, which
-  tests the first shape at _runtime_ by rebuilding a PATH without the guarded tool. That
-  is stronger evidence per finding but can only judge the repo it sits in; this is the
-  static, fleet-portable half.
-
-### Fixed
-
-- **Footnote `¹⁴` said `ouch` was "unpackaged on Alpine outright". It is in
-  `edge/testing`, and the matrix already said so one line away.** `PORTING-MATRIX.md`'s
-  `ouch` row carries `testing¹⁴` in its Alpine cell; the footnote that cell points at then
-  denied it, splitting `ouch` off from `duf`/`glow`/`tealdeer` as a fourth, distinct case.
-  Re-queried on pkgs.alpinelinux.org: **`ouch` 0.6.1-r0, `edge`/`testing`**, maintainer
-  listed, built 2025-05-28, on x86_64 and aarch64 — and absent from v3.21, v3.22, v3.23 and
-  v3.24, each queried individually. That is exactly the other three's shape
-  (`duf` 0.9.1-r9, `glow` 3.0.0-r0, `tealdeer` 1.8.0-r0, all `edge`/`testing`, none on
-  stable). The footnote now reads `testing`-only and groups all four; the table cell was
-  right and is unchanged.
-
-  **How the file came to contradict itself is the part worth recording.** This cell was
-  already corrected once, the OTHER way: an earlier `/os-package-availability` stamp set
-  Alpine's `ouch` to `testing`. Then #519 flipped `¹⁴` back, citing `dotfiles-Alpine`'s
-  `bootstrap.sh` comment ("also unpackaged on Alpine — cargo only") as its evidence — and
-  that comment was itself wrong. Two documents agreeing is not two sources; a claim about
-  what a distro packages is only ever settled by querying the distro. The `bootstrap.sh`
-  comment is corrected in the same sweep (dotgibson/dotfiles-Alpine#146), so the citation
-  and the cited now say the same true thing.
-
-  **Nothing operational changes.** `testing` is not enabled on a stable release and `ouch`
-  is on no stable branch, so `cargo install --locked ouch --no-default-features` remains
-  its real source on Alpine — as does the bzip3/bindgen reason for those flags, which is
-  unaffected and kept verbatim. The neighbouring `¹⁷` is also left alone: `jnv` returns no
-  results on edge including `testing`, so it is the genuinely-unpackaged one.
-
-- **Footnote `³⁴`'s jq security floor omitted the branch furthest below it.** The fleet
-  position named Alpine 3.22/3.23/3.24 (1.8.1) as below the recorded ≥ 1.8.2 floor but
-  skipped **Alpine 3.21, which carries 1.7.1-r0** — further below than any Alpine branch
-  listed, and a branch the fleet still supports (EOL 2026-11-01; `dotfiles-Alpine`'s
-  `install/packages.txt` reasons about it explicitly for `yazi` and `gron`). Now listed with
-  the other 1.7.1 builds. Verified alongside the rest: edge 1.8.2-r0, v3.22/v3.23/v3.24
-  1.8.1-r0, v3.21 1.7.1-r0.
-
-- **`watchexec` 2.7.0 on Arch and Homebrew — the same bullet, one release later.**
-  (`PORTING-MATRIX.md`) Footnote `²⁵`'s Arch/Homebrew bullet read 2.6.1, with `2.6.1-1` as Arch's
-  package revision. Both have moved to **2.7.0** (`2.7.0-1`), and the block's `versions
-  re-verified` stamp is now 2026-08-30. The `verified 2026-08-12` and `Linux-repo coverage
-  re-verified 2026-08-21` stamps beside it are deliberately unchanged: only versions were
-  re-checked, not availability or which Linux repos carry it.
-
-  Re-checked against each repo's own package pages, per the convention the footnote declares —
-  `formulae.brew.sh` (2.7.0, neither deprecated nor disabled) and `archlinux.org` (2.7.0-1). The
-  other four bullets hold unchanged: openSUSE Tumbleweed and nixpkgs 2.5.1, Alpine `community`
-  2.5.1-r0, GURU 2.5.0 (still the top non-`9999` ebuild), and Fedora/Debian/Kali packaging it
-  nowhere. So the two-way split #611 introduced is still the right shape, and the parenthetical
-  explaining it still reads true — Arch and Homebrew moved together again.
-
-  This is the **second** bump of this line in eight days; #611 stamped 2.6.1 on 2026-08-23. That
-  cadence is inherent to recording an exact version for a fast-moving upstream, and it is still
-  worth recording here, because the cell's whole claim is that Homebrew packages `watchexec`
-  while the MacBook `Brewfile` is the one ²¹ entry that deliberately declines it — a reader
-  checking that wants a date beside the number. That assertion is unchanged, and so is the
-  `Brewfile`: the audit that surfaced this found all 77 entries resolving under their canonical
-  names, none deprecated or disabled.
-
-  Surfaced by `/os-package-availability macbook` (dotfiles-MacBook#211).
-
-- **`VENDORING.md` described a resolved `core.lock` defect as a live hazard (#670).** It
-  warned, in the present tense, that three OS repos independently generate `core.lock` and
-  "have already drifted from it and from each other" — naming Arch's hardcoded
-  `core_branch=main`, openSUSE's SHA-in-that-field, and MacBook's read-back of the previous
-  value. #593 retired all three more than a release ago. Every one of the four `make
-  core-lock` targets in the fleet is now an echo-only redirect that writes nothing and names
-  its own retired defect in the past tense (Offense's runs a read-only freshness check and
-  points at its own pull). Telling a reader the fleet is in a state it is not in is worse
-  than silence: it also spends the credibility of the surrounding warnings, which are still
-  live.
-
-  The paragraph now states the rule that survives — Core's `sync-core.sh` is the only writer
-  of `core.lock` in a fan-out repo, because it stamps the lock in the same commit that
-  materializes `core/` — and records the four redirects as the **enforcement** of that rule
-  rather than as breaches of it. The three retired generators stay in the text as the
-  evidence for why a second writer cannot be kept in step by discipline; they are no longer
-  presented as something to go and fix.
-
-- **The same stale claim stood in a second document.** `RELEASE-STRATEGY.md` also read
-  "three consumers carry an independent generator of a format Core owns, and all three have
-  already drifted from it", so correcting `VENDORING.md` alone would have left two Core
-  documents disagreeing about the repo's own rule — the shape of defect #668 had just
-  finished clearing out. Both now say one thing.
-
-- **The runbook told you a patch cut moves `v4`, four lines after saying the fleet pins
-  `@v5` (#672).** The v5.0.0 sweep corrected `RELEASE-RUNBOOK.md:183` to "currently `@v5`"
-  and stopped there, leaving the bullet 26 lines below it saying a PATCH or MINOR keeps "the
-  **same** alias (`v4` today)" and that every caller pinned `@v4` picks the change up. Read
-  literally on the next patch cut, that force-advances the **frozen** major — the exact
-  motion `RELEASE-STRATEGY.md` §"Pinning reusable workflows" forbids, and the one §8a was
-  built to catch on the receiving end. Three more live claims had gone the same way: the
-  straggler-hunt command (`grep -rl 'uses:.*@v4'`) now matches nothing fleet-wide and so
-  reports a clean sweep by construction, and `RELEASE-RUNBOOK.md` §2/§3a plus
-  `RELEASE-STRATEGY.md`'s release-paths table each described `dotfiles-Windows` as
-  SHA-pinning "rather than tracking `@v4`" — a contrast drawn against an alias nothing
-  tracks.
-
-  **The rest went version-neutral rather than being bumped**, which is the point: an `@vN`
-  that names no major cannot go stale, so this is the last time these lines need a sweep.
-  That covers `VENDORING.md`'s two live rules, the `freshness-triage` and `modernize`
-  routines' descriptions of what the fleet pins, and — deliberately outside the docs — the
-  same claims where they are stated in code. `sync-core.sh:370` was a verbatim twin of
-  `VENDORING.md`'s sentence about the mutable alias. Fixing the prose alone would have left
-  the docs and the code contradicting each other on one rule, which is the defect #668 and
-  #670 just finished clearing.
-
-  One site took the opposite treatment, and the distinction is the rule: `sync-core.sh`'s
-  `--help` still offered `refs/tags/v4` as the tag to vendor a new repo at — a ref the
-  reader **pastes**, not a claim they read, so it is corrected to a concrete `refs/tags/v5`
-  rather than genericized. That matches its own file's header, `ARCHITECTURE.md`,
-  `VENDORING.md`, `PORTING-MATRIX.md`, and the live default in `new-os-repo.sh`. It is the
-  one instance the v5.4.2 sweep missed while correcting its sibling in `new-os-repo.sh`, and
-  it was user-facing output the whole time.
-
-  The MAJOR worked example is now `@vN` → `@vN+1`, with the concrete v4→v5 commands kept but
-  framed as the historical cut they are. This **supersedes** the v5.0.0 note above declaring
-  that block "correct as written": it was, on the day it was written, and it stopped being
-  correct the moment `v5` shipped — which is the argument for not writing a present tense
-  that has to be swept every major. `CHANGELOG.md`, the proposal docs, the #515 history, and
-  the `dotfiles-managed v4` marker chain are untouched; the marker is an architecture
-  generation asserted by `bootstrap-test.yml` and the suite, not a tag alias.
-
-### Changed
-
-- **`core_branch` is documented as gone, and the flat "only sanctioned writer" claim is
-  qualified (#670).** Two things were true but unwritten. First, `dotfiles-Offense` is a
-  real second writer: `make core-sync` runs that repo's own `scripts/sync-core.sh`, a
-  `git subtree pull --squash` that stamps all four fields, and Offense's `CONTRIBUTING.md`
-  teaches it as the update route there. It is sanctioned — unlike the three retired
-  generators it writes Core's format from what it actually pulled, taking `core_sha` from the
-  squash commit's `git-subtree-split` trailer and `core_version` from the tree on disk, so
-  the lock cannot name a commit its own `core/` does not contain — but an unqualified "only
-  sanctioned writer" read as covering it and did not. `VENDORING.md` now names it as the one
-  exception, and notes the consequence: Offense has two paths into `core/`, the fan-out which
-  replaces the tree and its own pull which merges, and `core-integrity` gates both because
-  both stamp the lock.
-
-  Second, the pre-#453 `core_branch` field survives in no `core.lock` anywhere — all nine
-  fleet locks are Core-stamped with `core_ref` — so it is now documented as gone as of v5,
-  and a lock still carrying it is pre-v5 and fixed by a sync rather than by hand. Offense's
-  reader-side fallback (`scripts/sync-core.sh:80-82,183`,
-  `test/check-core-freshness.sh:59-63`) is the last consumer of the old name and is dead
-  against every lock that exists; retiring it is a `dotfiles-Offense` change, tracked
-  separately.
-
-## [v5.4.2] - 2026-08-28
-
-### Fixed
-
-- **The docs still taught `git subtree` as the live mechanism (#668).** #587 replaced the
-  fan-out's `git subtree pull --squash` with a pinned fetch plus `read-tree --prefix`, but
-  the record never followed. Two Core documents contradicted each other on the repo's
-  central mechanism, and the one giving instructions was the wrong one:
-  `RELEASE-STRATEGY.md` handed the reader
-  `git subtree pull --prefix=core <core-remote> vX.Y.Z --squash` for both adopting a release
-  and rolling one OS back — precisely what `VENDORING.md` forbids, because it moves `core/`
-  but not `core.lock` and leaves `core-integrity.sh` reporting `TAMPERED`.
-
-  Both recipes are now the real incantation, run from a Core checkout, with the three
-  constraints that make it work stated for the first time: `sync-core.sh` refuses unless
-  local `HEAD` **is** the pinned commit; it reads `core_version` from the **working
-  tree**, so pinning an older tag from `main` writes a silently wrong lock; and the pin
-  must be the **peeled commit**, never `refs/tags/vX.Y.Z` — releases are annotated tags,
-  and the script resolves its pin with `git ls-remote`, which returns the _tag object_, a
-  SHA that can never equal the `HEAD` a tag checkout leaves you on. The three pre-existing
-  `CORE_BRANCH=refs/tags/v…` recipes in `ARCHITECTURE.md`, `VENDORING.md` and
-  `PORTING-MATRIX.md` carried that same latent defect and are corrected too. The claim that
-  a rollback "merges backwards, it does not un-merge" is deleted — materializing replaces
-  the tree outright, so an older pin is just an ordinary sync.
-
-  Several surfaces an operator actually reads at runtime were asserting the retired
-  mechanism: `make help`, `sync-core.sh --help`, both lines of the core-guard hook's
-  refusal message, the README `new-os-repo.sh` writes into every new OS repo, and the
-  **fan-out PR body shipped into nine repos on every release** ("Vendors the released Core
-  into `core/` via `git subtree pull --squash`"). `.bin/sync-upstream.sh` recommended the
-  forbidden command in its own error tip. All corrected, along with the now-false "the
-  subtree squash records the exact Core commit" in `ARCHITECTURE.md`, `core.manifest` and
-  `zsh/30-functions.zsh` — `core.lock` records it.
-
-  One-line mechanism claims in `CLAUDE.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-  `ARCHITECTURE.md`, `README.md`, the PR and issue templates, the `doc-consistency`
-  subagent, and the non-Markdown surfaces that carried the same sentence (`ci.yml`,
-  `core-integrity.yml`, `sync-fanout.yml`, `core-integrity.sh`, `CODEOWNERS`,
-  `.gitattributes`, `.pre-commit-config.yaml`) simply drop the clause: they state the invariant that matters (`core/` is a copy; a defect
-  fans out N-way) and leave `VENDORING.md` the single owner of _how_, so no mechanism claim
-  can go stale in ten files again.
-
-  What **stays** is the one `git subtree` that is still live: the one-time `subtree add`
-  that creates a `core/` where none exists (`scripts/new-os-repo.sh` runs it, and
-  `sync-core.sh` skips a repo without one). It is now labelled as initial vendoring and
-  never the update path, and its `refs/tags/v4` is corrected to `v5`. `PORTING-MATRIX.md`
-  step 5 also stopped instructing an add that could not work: step 1 copies Fedora's
-  `core/` across, so `subtree add` there fails with _prefix 'core' already exists_ — the
-  step is a re-vendor via `sync-core.sh`.
-
-## [v5.4.1] - 2026-08-28
-
-### Fixed
-
-- **The `os.capabilities` fleet gate deadlocked the fan-out it depends on (#667).** §9c shipped
-  BLOCKING on a missing declaration, and `scripts/sync-core.sh` runs `make audit` over a fleet
-  checkout **before** it vendors anything — deliberately, so a red tree never reaches nine repos.
-  But a declaration cannot merge into an OS repo until that repo has vendored the Core whose
-  validator accepts it, and **that vendoring is the fan-out**. So the gate refused to fan out the
-  very release that would let the declarations land: v5.4.0 published, `sync-fanout` failed, and
-  zero vendor PRs opened.
-
-  The two findings now carry two severities. A **malformed** declaration still blocks — the repo
-  authored one and got it wrong, and no release cycle makes that acceptable. **No declaration at
-  all** is advisory for one cycle, then flips.
-
-  This is the same red-on-arrival shape §5f and `lint-call.yml`'s owned-block gate both name, and
-  both answer the same way. It is also the shape this change's _own_ `lint-call.yml` step already
-  got right — that step makes a missing declaration advisory and a malformed one blocking. The
-  asymmetry between the two halves was the defect, not the reasoning in the workflow.
