@@ -125,7 +125,9 @@ submodule step. Run as **root**, or as a user with **doas** (or sudo) configured
 symlinks Core + the Alpine layer into place.
 
 Flags: `--dry-run` (preview every link, change nothing), `--links-only` (re-link
-without touching `apk`), `--only` / `--skip` (limit to some Core module groups).
+without touching `apk`), `--only` / `--skip` (limit to some Core module groups),
+`--strict` (exit 1 if any best-effort install did not complete — they are listed
+either way).
 Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
 anything is linked over them — nothing is overwritten in place.
 
