@@ -2,6 +2,12 @@
 # apk package names for the modern terminal stack. One per line; # comments ok.
 # Most modern tools live in the `community` repo — make sure it's enabled in
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
+# `community` is supported only until the NEXT stable release; `main` for ~2 years. Per
+# alpinelinux.org/releases (checked 2026-09-13) only v3.24 is listed main+community —
+# v3.21, v3.22 and v3.23 are main-only. ~60 of the ~72 names below live in `community`,
+# so on those three branches they still INSTALL (every name resolves there — see the
+# per-branch matrix in .github/workflows/packages.yml) but receive no security updates.
+# That is Alpine policy, not naming drift (dotfiles-Alpine#188).
 # A few tools are NOT listed here and are built from source in bootstrap.sh instead:
 # tealdeer (testing-only, cargo) plus duf, glow and sesh (go install) — all four are
 # testing-only or unpackaged on Alpine, so listing them would only break bulk install.
