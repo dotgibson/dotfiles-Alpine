@@ -4,41 +4,75 @@
 # Provision an Alpine box (bare-metal / VM / container / WSL) and wire dotfiles.
 # Idempotent. OS-NATIVE layer; Core (zsh/tmux/nvim/git) is vendored under core/.
 # Alpine is the outlier: musl libc, doas (not sudo), ash default shell, OpenRC.
-# The shared symlink/loader/login-shell scaffold lives in core/lib/bootstrap-lib.sh.
 #
-# Usage:
-#   ./bootstrap.sh                 # full: apk packages + extras + symlinks
-#   ./bootstrap.sh --links-only    # just (re)create symlinks
-#   ./bootstrap.sh --dry-run       # preview the wiring; change nothing
-#   ./bootstrap.sh --only zsh,nvim # link ONLY these Core module groups
-#   ./bootstrap.sh --skip tmux     # link everything EXCEPT these groups
-#   ./bootstrap.sh --strict        # exit 1 if any best-effort install did not complete
+# SHAPE (dotgibson/dotfiles-core#976): this file DECLARES what it is and DEFINES the
+# hooks that are Alpine's, then hands over to Core's bootstrap driver, blib_main — the
+# shared skeleton every bootstrap.sh in the fleet used to carry by hand (the flag loop,
+# the escalator, the sudo keepalive, the Core symlink surface + the OS overlays, the
+# managed ~/.zshrc loader, the login shell, the closing report) runs from ONE definition
+# in core/lib/bootstrap-lib.sh. What stays here: the Alpine check, the apk phase with
+# its musl source-build fallbacks and the 1Password repo, /etc/wsl.conf, and the
+# ~/.zshenv ZDOTDIR shim.
 #
-# --dry-run implies --links-only: provisioning installs packages and touches system
-# files, which cannot be meaningfully previewed, so it is skipped rather than faked.
-#
-# Module groups (for --only/--skip): zsh nvim tmux git prompt tools — they affect
-# the wiring steps only, never package provisioning; combine with --links-only to
-# re-wire a subset of configs without touching apk.
-#
-# Run as root, OR as a user with doas/sudo configured (Alpine defaults to doas).
-#
-# PREREQUISITE — bash: this script is bash (shebang above; it uses arrays + mapfile),
-# but a fresh Alpine ships only busybox ash, so bash is NOT present by default. Install
-# it FIRST or the kernel can't exec this file ("bad interpreter: bash: not found"):
-#     apk add bash     # (or: doas apk add bash)
-# bash is also listed in install/packages.txt so a full provision keeps it installed.
+# Run `./bootstrap.sh --help` for usage — bootstrap_usage() below is this repo's half of
+# it (including the one thing a first-time Alpine user must do first: `apk add bash`);
+# the driver appends the shared flags.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-LINKS_ONLY=0
-DRY=0
-STRICT=0
-# --only/--skip are validated by the shared lib (blib_select), which is sourced
-# AFTER this loop — so capture the raw values now and apply them below.
-ONLY_RAW="" SKIP_RAW="" ONLY_SEEN=0 SKIP_SEEN=0
+
+# ── what this bootstrap IS (read by blib_main) ────────────────────────────────
+# doas-first: the fact os/alpine.capabilities declares, kept on the rare Alpine box that
+# has sudo too. The driver resolves the escalator with `blib_resolve_su --prefer doas`
+# (dotfiles-core#879 added the flag for exactly this file; test/check-root-probe.sh pins
+# the declaration and the lib's root rule together) — --require on a real run, best-effort
+# on --links-only and --dry-run, which change nothing privileged. An explicit BLIB_SU=
+# from the caller still wins (CI's --links-only leg sets it empty). Every install below
+# is best-effort and recorded in Core's ledger; the closing report lists the misses and
+# --strict turns them into exit 1 (STRICT_DEFAULT stays 0: a rate-limited API or a crate
+# that fails to build on musl must not strand the rest of a fresh box).
+# shellcheck disable=SC2034  # read by the vendored driver, which shellcheck cannot see
+BOOTSTRAP_NAME="Alpine"
+# shellcheck disable=SC2034
+BOOTSTRAP_OS=alpine
+# shellcheck disable=SC2034
+BOOTSTRAP_SU_PREFER=doas
+
+# The Alpine half of --help; the driver prints the shared flags after it. Every flag
+# this repo takes is a shared one, so this half is what the flags cannot say.
+# shellcheck disable=SC2329  # called by the vendored driver
+bootstrap_usage() {
+  cat <<'EOF'
+bootstrap.sh — provision an Alpine box (bare-metal / VM / container / WSL) and wire dotfiles.
+
+  ./bootstrap.sh                 full: apk packages + extras + symlinks
+  ./bootstrap.sh --links-only    just (re)create symlinks (no apk)
+  ./bootstrap.sh --dry-run       preview the wiring; change nothing (provisioning is
+                                 skipped rather than faked — it installs packages and
+                                 touches system files, which cannot be previewed)
+  ./bootstrap.sh --strict        exit 1 if any best-effort install did not complete
+
+Module groups (for --only/--skip): zsh nvim tmux git prompt tools — they affect the
+  wiring steps only, never package provisioning; combine with --links-only to re-wire
+  a subset of configs without touching apk.
+
+Run as root, OR as a user with doas/sudo configured (Alpine defaults to doas).
+
+PREREQUISITE — bash: this script is bash (it uses arrays + mapfile), but a fresh Alpine
+  ships only busybox ash, so bash is NOT present by default. Install it FIRST or the
+  kernel can't exec this file ("bad interpreter: bash: not found"):
+      apk add bash     # (or: doas apk add bash)
+  bash is also listed in install/packages.txt so a full provision keeps it installed.
+
+Env overrides:
+  BLIB_SU     privilege escalator. Resolved by Core's blib_resolve_su when unset:
+              root runs directly, else doas, else sudo. Set it empty or to `sudo`
+              to override the probe.
+  BLIB_DRY    set to 1 for the same effect as --dry-run
+EOF
+}
 
 # ── pinned third-party material ────────────────────────────────────────────────
 # The 1Password apk signing key. Adding a third-party repo + key to apk means every
@@ -67,30 +101,8 @@ TREESITTER_FLOOR="0.26.1"
 # core/PORTING-MATRIX.md footnote 33. Bump it only when Core's floor actually moves.
 NEOVIM_FLOOR="0.12.0"
 
-while [[ $# -gt 0 ]]; do case "$1" in
-  --links-only) LINKS_ONLY=1 ;;
-  --dry-run | -n) DRY=1; LINKS_ONLY=1 ;;
-  --strict) STRICT=1 ;;
-  --only) [[ $# -ge 2 ]] || { echo "--only requires module names, e.g. --only zsh,nvim" >&2; exit 1; }; ONLY_RAW="$2"; ONLY_SEEN=1; shift ;;
-  --only=*) ONLY_RAW="${1#*=}"; ONLY_SEEN=1 ;;
-  --skip) [[ $# -ge 2 ]] || { echo "--skip requires module names, e.g. --skip tmux" >&2; exit 1; }; SKIP_RAW="$2"; SKIP_SEEN=1; shift ;;
-  --skip=*) SKIP_RAW="${1#*=}"; SKIP_SEEN=1 ;;
-  -h | --help)
-    # Print the whole header block, not a hardcoded line range: the previous
-    # `sed -n '2,19p'` stopped before the PREREQUISITE paragraph, hiding the one
-    # thing a first-time Alpine user must do (`apk add bash`) because a fresh box
-    # has only busybox ash. Walking to the first non-comment line can't drift again.
-    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); if ($0 !~ /^─+$/) print; next } NR > 1 { exit }' "$0"
-    exit 0
-    ;;
-  *)
-    echo "unknown arg: $1" >&2
-    exit 1
-    ;;
-  esac; shift; done
-
 # ── core/ subtree present? (inline: can't source a lib out of core/ before this) ─
-# Validate the SPECIFIC paths we depend on below — the zsh modules wire_links
+# Validate the SPECIFIC paths we depend on below — the zsh modules the driver
 # symlinks, plus the two libs sourced next — so a missing or partially-vendored
 # subtree fails HERE with a precise message, not later with a cryptic
 # `source: No such file`.
@@ -115,65 +127,22 @@ source "$DOTFILES/core/lib/ux.sh"
 # shellcheck source=core/lib/bootstrap-lib.sh
 source "$DOTFILES/core/lib/bootstrap-lib.sh"
 
-# ── PATH prelude: make the presence guards below tell the TRUTH ───────────────
-# bootstrap runs in BASH, before any Core shell exists, so the user-local bindirs the
-# installs below WRITE INTO are not on PATH yet — ~/.local/bin, ~/.cargo/bin and GOBIN
-# reach PATH only via core/zsh/00-tools.zsh and os/alpine.zsh, i.e. only inside a Core
-# zsh. Every `command -v <tool>` guard in this script was therefore answered by the PATH
-# of whatever shell launched it, and on a fresh box that is bash with none of them.
-#
-# That is not a tidiness point here. mise.run drops its binary in ~/.local/bin, so the
-# bare `command -v mise` in _dotfiles_go_install was FALSE for the mise this script had
-# installed moments earlier — both arms of the Go fallback missed and the else branch
-# announced "needs Go" on a box that had one. openSUSE shipped exactly that and exited 2
-# on every bootstrap (dotgibson/dotfiles-core#748); here it stayed invisible only because
-# `go` is in install/packages.txt and arm 1 always won. Drop that package and this repo
-# loses tools silently, with a green CI.
-#
-# blib_user_bindirs_on_path is Core's helper for precisely this, resolving CARGO_HOME and
-# GOBIN/GOPATH rather than hard-coding them (core/lib/bootstrap-lib.sh). It adds only
-# directories that EXIST, so it is called AGAIN inside provision() once the installers
-# have created them — see there.
-blib_user_bindirs_on_path
+# ── PATH prelude ──────────────────────────────────────────────────────────────
+# The driver runs blib_user_bindirs_on_path before any probe, so the `command -v`
+# guards below see ~/.local/bin, ~/.cargo/bin and GOBIN on a box that has them
+# (dotgibson/dotfiles-core#748 — the mise.run miss that exited openSUSE 2 on every run).
+# It adds only directories that EXIST, so bootstrap_provision calls it AGAIN once the
+# installers have created them — see there.
 
-# Apply any --only/--skip module selection now the validator (blib_select) exists;
-# it aborts on a malformed selector or an unknown group.
-if ((ONLY_SEEN)); then blib_select --only "$ONLY_RAW"; fi
-if ((SKIP_SEEN)); then blib_select --skip "$SKIP_RAW"; fi
-
-# ── privilege tool: Alpine defaults to doas, not sudo. Use nothing if root. ─────
-# Core's blib_resolve_su: root is decided from $EUID with a STRING compare — see
-# test/check-root-probe.sh for the `id -u` bug that rule exists to avoid
-# (dotgibson/dotfiles-core#867) — and the escalator is pinned by ABSOLUTE path.
-# `--prefer doas` keeps the doas-first fact os/alpine.capabilities declares, including on
-# the rare Alpine box that has sudo too; dotfiles-core#879 added the flag for exactly this
-# file, and this is the adoption that comment promised. An explicit BLIB_SU= from the
-# caller still wins (CI's --links-only leg sets it empty).
-#
-# A preview or a links-only run changes nothing, so it must not demand the privilege it
-# never uses. A real run does: --require, and the lib names what it probed for.
-if ((LINKS_ONLY)); then
-  blib_resolve_su --prefer doas || true
-else
-  blib_resolve_su --prefer doas --require || {
-    echo "Need root: run as root, or 'apk add doas' and configure /etc/doas.d." >&2
+# ── guard: the Alpine check ───────────────────────────────────────────────────
+# shellcheck disable=SC2329
+bootstrap_guard() {
+  # ── sanity: confirm we're on Alpine ────────────────────────────────────────────
+  if ! grep -qiE '^ID=alpine' /etc/os-release 2>/dev/null; then
+    echo "This bootstrap targets Alpine Linux (expects ID=alpine in /etc/os-release)." >&2
     exit 1
-  }
-fi
-# $SU is what every privileged line below invokes: a single token (an absolute path to
-# doas or sudo) or empty when root — the same value the shared lib escalates with.
-SU="$BLIB_SU"
-
-# Hand the preview flag to the shared lib: blib_link / blib_seed / blib_link_core and
-# the loader writer all honour BLIB_DRY by planning instead of mutating, and
-# blib_wire_summary prefixes its tally with "(dry run)".
-if ((DRY)); then export BLIB_DRY=1; fi
-
-# ── sanity: confirm we're on Alpine ────────────────────────────────────────────
-if ! grep -qiE '^ID=alpine' /etc/os-release 2>/dev/null; then
-  echo "This bootstrap targets Alpine Linux (expects ID=alpine in /etc/os-release)." >&2
-  exit 1
-fi
+  fi
+}
 
 IS_WSL=0
 if blib_is_wsl; then IS_WSL=1; fi
@@ -330,16 +299,14 @@ _fetch_verified() { # <url> <sha256> <dest>
   rm -f "$tmp"
 }
 
-provision() {
-  # Core's sudo keepalive: prime once with the prompt visible, refresh in the background so
-  # a minutes-long musl cargo build cannot leave a later `sudo` blocked at an invisible
-  # prompt. A no-op for doas (no refreshable timestamp) and for root — which is this box's
-  # normal case, and why adopting it costs nothing here. This function owns the EXIT trap.
-  trap 'blib_sudo_keepalive_stop' EXIT
-  blib_sudo_keepalive_start || {
-    echo "sudo authentication failed — cannot provision packages." >&2
-    exit 1
-  }
+# ── the apk phase (full runs only; the driver runs it under the sudo keepalive) ─
+# The keepalive is a no-op for doas (no refreshable timestamp) and for root — this
+# box's normal case.
+# shellcheck disable=SC2329
+bootstrap_provision() {
+  # $SU is what every privileged line below invokes: a single token (an absolute path to
+  # doas or sudo) or empty when root — the value the driver resolved and escalates with.
+  SU="$BLIB_SU"
   # shellcheck disable=SC2086  # $SU: single token or empty (root)
   blib_say "apk update"
   # shellcheck disable=SC2086
@@ -377,7 +344,7 @@ provision() {
   fi
   # Only reachable via the fallback above: apk puts atuin in /usr/bin, but the installer
   # hard-codes ~/.atuin/bin (install.sh: ATUIN_BIN="$HOME/.atuin/bin/atuin") and appends its
-  # init line to ~/.zshrc — which wire_links() then REPLACES with the managed loader. Since
+  # init line to ~/.zshrc — which the driver then REPLACES with the managed loader. Since
   # core/zsh/00-tools.zsh prepends only ~/.local/bin before probing for tools, an
   # installer-provisioned atuin would be invisible to a Core shell: no HAVE_ATUIN, no cached
   # init, no Ctrl+E, and the daemon exports in os/alpine.zsh inert. Link it where Core looks.
@@ -618,13 +585,9 @@ provision() {
   fi
 }
 
-wire_links() {
-  # The whole shared symlink surface + the Alpine OS overlays + the managed .zshrc
-  # loader + the default-login-shell switch now live in core/lib/bootstrap-lib.sh.
-  blib_link_core "$DOTFILES" "$CONFIG"
-  blib_link_os_layer "$DOTFILES" "$CONFIG" alpine
-  # shellcheck disable=SC2119  # no args is intentional — writes the default module set
-  blib_write_zshrc_loader
+# ── after the managed ~/.zshrc, before the login shell ────────────────────────
+# shellcheck disable=SC2329
+bootstrap_wire_post_loader() {
   # ~/.zshenv (Alpine-only): sets ZDOTDIR so /etc/zsh/zshrc's XDG nudge stops warning
   # about "startup files both in ~/ and ~/.config/zsh/" — a false positive, since Core
   # seeds the latter as a symlink to the former. See zsh/zshenv.zsh for the rationale.
@@ -632,47 +595,6 @@ wire_links() {
   # then points at.
   blib_say "symlinking zsh/zshenv.zsh (Alpine ZDOTDIR shim)"
   blib_link "$DOTFILES/zsh/zshenv.zsh" "$HOME/.zshenv"
-  blib_set_login_shell
-  # Local guardrail against hand-editing the vendored subtree. The hook lives in
-  # .git/hooks, which is not version-controlled — so a fresh clone has NO protection
-  # until something installs it. sync-core.sh reinstalls it on every fan-out, but
-  # that only ever runs on the maintainer's machine; a bootstrap is the other place
-  # a clone becomes a working repo. CI's core-integrity check is the backstop, not
-  # the first line. Skipped under --dry-run: it writes a file.
-  if ((DRY)); then
-    blib_say "(dry run) would install the core/ pre-commit guard"
-  else
-    blib_install_core_guard "$DOTFILES"
-  fi
-  if ((DRY)); then
-    blib_ok "dry run complete — nothing was changed$(blib_selected_note)"
-  else
-    blib_ok "symlinks wired$(blib_selected_note)"
-  fi
-  blib_wire_summary
 }
 
-if ((LINKS_ONLY == 0)); then
-  provision
-  blib_sudo_keepalive_stop
-fi
-wire_links
-
-# ── closing report ────────────────────────────────────────────────────────────
-# Every install above is best-effort on purpose — a rate-limited API or a crate that
-# fails to build on musl must not strand the rest of a fresh box — but a script that then
-# said "complete" and exited 0 made a box missing half its tools look identical to a good
-# one. Each miss is recorded via blib_note_fail (Core's ledger, which also holds what the
-# shared lib records itself); blib_failures_report prints them together here and returns
-# non-zero when there were any, which --strict turns into the exit code.
-if ((DRY)); then
-  blib_ok "dry run finished — re-run without --dry-run to apply"
-elif ! blib_failures_report; then
-  if ((STRICT)); then
-    blib_warn "exiting non-zero (--strict)"
-    exit 1
-  fi
-  blib_ok "Alpine bootstrap finished WITH the misses above — open a new shell or: exec zsh"
-else
-  blib_ok "Alpine bootstrap complete — open a new shell or: exec zsh"
-fi
+blib_main "$@"
