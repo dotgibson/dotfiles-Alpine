@@ -33,12 +33,14 @@
 # cannot distinguish the bug from the fix proves nothing, and this one would otherwise
 # pass on both.
 #
-# WHERE THE DECISION LIVES NOW. bootstrap.sh no longer probes for root itself: it calls
-# Core's blib_resolve_su (`--prefer doas`, dotgibson/dotfiles-core#973), and the root arm
-# is in the VENDORED core/lib/bootstrap-lib.sh. So the condition is extracted from there —
-# a Core sync that changed the rule would change what this gate evaluates, which is the
-# point — and a second assertion pins that bootstrap.sh actually delegates to it, so a
-# local probe cannot quietly come back beside the lib's.
+# WHERE THE DECISION LIVES NOW. bootstrap.sh no longer probes for root itself: it
+# declares `BOOTSTRAP_SU_PREFER=doas` and hands over to Core's bootstrap driver, blib_main
+# (dotgibson/dotfiles-core#976), which calls blib_resolve_su with that preference
+# (`--prefer doas`, dotgibson/dotfiles-core#973); the root arm is in the VENDORED
+# core/lib/bootstrap-lib.sh. So the condition is extracted from there — a Core sync that
+# changed the rule would change what this gate evaluates, which is the point — and a
+# second assertion pins that bootstrap.sh actually delegates to it (the declaration AND
+# the hand-over), so a local probe cannot quietly come back beside the lib's.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,17 +54,28 @@ note() { printf '   --   %s\n' "$1"; }
 [ -f "$BOOT" ] || { printf '!! no bootstrap.sh at %s\n' "$BOOT"; exit 2; }
 [ -f "$BLIB" ] || { printf '!! no vendored bootstrap-lib at %s\n' "$BLIB"; exit 2; }
 
-# bootstrap.sh must DELEGATE, doas-first. Comment-stripped, so the paragraph explaining
-# the choice cannot satisfy it; the call has to be there. Captured and then tested, like
-# the belt below, rather than `| grep -q`: under `pipefail` a -q that exits on the first
-# match can leave the upstream grep dead of SIGPIPE, and the pipeline reads as "no call"
-# — a false FAIL that depends on pipe-buffer timing (it passed on GNU grep and failed in
-# the Alpine container on the first CI run).
-_calls="$(grep -vE '^[[:space:]]*#' "$BOOT" | grep -E 'blib_resolve_su[[:space:]]+--prefer[[:space:]]+doas' || true)"
-if [ -n "$_calls" ]; then
-  ok "bootstrap.sh resolves the escalator with blib_resolve_su --prefer doas"
+# bootstrap.sh must DELEGATE, doas-first: declare the preference AND hand over to the
+# driver that applies it. Comment-stripped, so the paragraph explaining the choice cannot
+# satisfy it; the lines have to be there. Captured and then tested, like the belt below,
+# rather than `| grep -q`: under `pipefail` a -q that exits on the first match can leave
+# the upstream grep dead of SIGPIPE, and the pipeline reads as "no call" — a false FAIL
+# that depends on pipe-buffer timing (it passed on GNU grep and failed in the Alpine
+# container on the first CI run).
+_code="$(grep -vE '^[[:space:]]*#' "$BOOT")"
+_prefer="$(printf '%s\n' "$_code" | grep -E '^[[:space:]]*BOOTSTRAP_SU_PREFER=doas([[:space:]]|$)' || true)"
+_handover="$(printf '%s\n' "$_code" | grep -E '(^|[^[:alnum:]_])blib_main[[:space:]]+"\$@"' || true)"
+if [ -n "$_prefer" ] && [ -n "$_handover" ]; then
+  ok "bootstrap.sh declares BOOTSTRAP_SU_PREFER=doas and hands over to blib_main (which resolves with --prefer doas)"
 else
-  bad "bootstrap.sh does not call \`blib_resolve_su --prefer doas\` — the root decision has moved back into this file, or lost its doas-first order"
+  bad "bootstrap.sh does not declare \`BOOTSTRAP_SU_PREFER=doas\` and call \`blib_main \"\$@\"\` — the root decision has moved back into this file, or lost its doas-first order"
+fi
+# And the driver must honour the declaration: the lib's hand-over is what turns the
+# preference into the --prefer call. Extracted, not restated, for the same reason as
+# the condition below.
+if grep -qE 'BOOTSTRAP_SU_PREFER' "$BLIB"; then
+  ok "the vendored driver reads BOOTSTRAP_SU_PREFER"
+else
+  bad "the vendored core/lib/bootstrap-lib.sh does not read BOOTSTRAP_SU_PREFER — the declaration above is inert; this Core needs v7.4.0 or later"
 fi
 
 # The condition guarding the lib's root arm — inside blib_resolve_su, the `if` that leads
