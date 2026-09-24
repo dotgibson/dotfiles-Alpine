@@ -4,7 +4,7 @@
 # /etc/apk/repositories (it is by default on Alpine 3.x + edge).
 # `community` is supported only until the NEXT stable release; `main` for ~2 years. Per
 # alpinelinux.org/releases (checked 2026-09-13) only v3.24 is listed main+community —
-# v3.21, v3.22 and v3.23 are main-only. ~60 of the ~72 names below live in `community`,
+# v3.21, v3.22 and v3.23 are main-only. 42 of the 72 names below live in `community`,
 # so on those three branches they still INSTALL (every name resolves there — see the
 # per-branch matrix in .github/workflows/packages.yml) but receive no security updates.
 # That is Alpine policy, not naming drift (dotfiles-Alpine#188).
@@ -70,8 +70,8 @@ viddy          # watch replacement (Core aliases watch->viddy, HAVE_VIDDY-guarde
 # source, not a mere fallback.
 # Do NOT add them back "as a best-effort": apk fails the whole transaction on one
 # unknown name, so a permanently-unresolvable entry makes the bulk `apk add` in
-# apk_install() fail EVERY run, forcing the per-package retry loop for all ~50
-# packages. The fallback is for names that might be missing on some boxes, not for
+# apk_install() fail EVERY run, forcing the per-package retry loop for every
+# package. The fallback is for names that might be missing on some boxes, not for
 # ones known to be absent on all of them.
 # apk_install() (bootstrap.sh) is resilient — a name missing on this box (e.g. `sd`
 # if it hasn't landed) is skipped per-package, never fatal.
@@ -81,7 +81,7 @@ gron           # since:v3.23 — greppable JSON. In `community` only since v3.23
                # (supported to 2026-11-01 / 2027-05-01). Not a rename and not a drop: it
                # was promoted from `testing` later, so leave the name alone. On those two
                # branches gron (and yazi) fail the bulk `apk add`, and apk_install() falls
-               # back to the per-package loop for all ~60 names — noisy every run, never
+               # back to the per-package loop for every name — noisy every run, never
                # fatal (bootstrap.sh skips per package). Verified 2026-08-21.
 gum            # shell-script UI toolkit (charm)
 xh             # HTTPie-style HTTP client
@@ -91,7 +91,8 @@ lnav           # log file navigator (core-doctor `data / net` row)
 carapace       # multi-shell completion engine (in community — no go install needed)
 sd             # sed-style find & replace (in community)
 yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
-               # Do NOT use plain `yq` (that's the Python kislyuk yq, a different tool).
+               # Do NOT use plain `yq`: kislyuk's Python yq is `yq-python`, and both
+               # provide `cmd:yq`, so name the package explicitly.
 # Opt-in companions: Core only wires these up when present (HAVE_DIFFT / HAVE_ASTGREP),
 # so they're additive, not required. Both are first-class musl builds in `community`
 # (no cargo/go fallback needed), so they belong in the apk list rather than bootstrap.
