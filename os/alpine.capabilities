@@ -30,6 +30,11 @@ PKG_COUNT_PENDING=apk list -u
 # `apk list -u` prints one upgradable package per line, name-version first, so the
 # default match (`.`) and field (1) are right and no PKG_PENDING_* key is needed.
 
+# ── what --packages must not nag about (#1087) ────────────────────────────────
+# Every verb above runs `apk`, which is base-system on Alpine — it is in busybox's
+# company, not in install/packages.txt, which lists what this repo ADDS to a box.
+PKG_UNLISTED_TOOLS=apk
+
 # ── scheduler (required) ──────────────────────────────────────────────────────
 # OpenRC, not systemd: this box has `crontab` (busybox crond) and no systemctl, so
 # `cron` is the honest answer and Core's 55-maint.zsh has had a live cron arm all
