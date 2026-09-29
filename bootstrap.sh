@@ -444,6 +444,9 @@ bootstrap_provision() {
   # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) now ships
   # in `community` (packages.txt) — apk installs it first; this cargo build is the
   # fallback. On musl it compiles the musl target (static, musl-safe), presence-guarded.
+  # Note apk's viddy is the pre-rewrite Go 0.4.0 on every branch (v3.21 through edge),
+  # not upstream's Rust 1.x — and since this guard checks presence only, the Rust build
+  # never runs once apk has installed it. Harmless: Core uses only `watch`->`viddy`.
   if ! command -v viddy >/dev/null && [[ ! -x "$HOME/.cargo/bin/viddy" ]] && command -v cargo >/dev/null; then
     blib_say "viddy (cargo build — watch replacement; Rust)"
     cargo install --locked viddy >/dev/null 2>&1 ||
