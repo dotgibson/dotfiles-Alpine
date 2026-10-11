@@ -94,11 +94,12 @@ sd             # sed-style find & replace (in community)
 yq-go          # mikefarah Go yq — packaged as `yq-go`, provides `cmd:yq`.
                # Do NOT use plain `yq`: kislyuk's Python yq is `yq-python`, and both
                # provide `cmd:yq`, so name the package explicitly.
-# Opt-in companions: Core only wires these up when present (HAVE_DIFFT / HAVE_ASTGREP),
-# so they're additive, not required. Both are first-class musl builds in `community`
-# (no cargo/go fallback needed), so they belong in the apk list rather than bootstrap.
+# Opt-in companions: Core only wires difftastic up when present (HAVE_DIFFT → `gdft`);
+# ast-grep is its own command, merely probed (no flag). Additive, not required. Both are
+# first-class musl builds in `community` (no cargo/go fallback needed), so they belong in
+# the apk list rather than bootstrap.
 difftastic     # structural git diff (difft) — gated by Core on HAVE_DIFFT
-ast-grep       # AST-aware structural search/rewrite (`ast-grep`) — gated by Core on HAVE_ASTGREP
+ast-grep       # AST-aware structural search/rewrite (`ast-grep`) — probed into Core's _CORE_PROBED ledger, no flag
 
 # ── editor + git workflow ─────────────────────────────────────
 neovim         # min:0.12.0 — nvim-treesitter (core/nvim, pinned to `main`) will not load
