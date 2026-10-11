@@ -128,6 +128,10 @@ Flags: `--dry-run` (preview every link, change nothing), `--links-only` (re-link
 without touching `apk`), `--only` / `--skip` (limit to some Core module groups),
 `--strict` (exit 1 if any best-effort install did not complete — they are listed
 either way).
+`DOTFILES_MISE_INSTALL=1 ./bootstrap.sh` also installs the mise runtimes from
+Core's `mise/config.toml`. They are opt-in because on musl, node, python and ruby
+compile from source, and node alone takes 20+ minutes. Without the flag, bootstrap
+lists what is missing; run `mise install` whenever you're ready.
 Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
 anything is linked over them — nothing is overwritten in place.
 
@@ -142,6 +146,8 @@ prompt — comes from vendored Core; this repo owns the Alpine specifics:
 - `bootstrap.sh` — `apk` provision + Core/OS symlink wiring (idempotent)
 - `install/packages.txt` — the `apk` package list (modern CLI stack)
 - `os/alpine.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
+- `/etc/mise/config.toml` — written by bootstrap to disable mise's `foundry`
+  (glibc-only prebuilt) system-wide, so the scheduled maint run skips it too
 - `wsl/wsl.conf` — installed to `/etc/wsl.conf` on WSL (no systemd — OpenRC)
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 

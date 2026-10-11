@@ -191,6 +191,56 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
   return 0
 }
 
+# ── mise runtimes: foundry excluded system-wide, the install itself opt-in ────
+# core doctor only checks that the mise BINARY exists, so a box could report all green
+# with every runtime in core/mise/config.toml still `(missing)`: bootstrap installed
+# mise but never asked it to install anything (auto_install = false).
+#
+# foundry first. mise pulls it as a glibc-linked prebuilt that cannot run on musl, and
+# core/mise/config.toml says to exclude it with disable_tools. WHERE that setting lives is
+# the whole question:
+#   · MISE_DISABLE_TOOLS in zsh/zshenv.zsh never reaches the daily maint runner — it is
+#     bash under a scheduler, so `mise upgrade --yes` there would still trip on foundry.
+#   · ~/.config/mise/conf.d/ OUTRANKS config.toml, so `mise use -g` would start writing
+#     THERE (see blib_adopt in core/lib/bootstrap-lib.sh).
+#   · editing the adopted ~/.config/mise/config.toml shows up as drift on every re-run.
+# The system config (/etc/mise/config.toml) has none of those problems: every mise process
+# reads it, it ranks below the user's global config, and `mise use -g` never writes it.
+#
+# Then the runtimes. On musl mise compiles node/python/ruby from source (all_compile — see
+# the headers block in install/packages.txt), and node alone is 20+ minutes, so a plain
+# bootstrap only says what is missing. DOTFILES_MISE_INSTALL=1 runs the install.
+_alpine_mise_runtimes() {
+  local mise_bin missing sysconf=/etc/mise/config.toml
+  mise_bin="$(command -v mise 2>/dev/null)" || mise_bin="$HOME/.local/bin/mise"
+  [[ -x $mise_bin ]] || return 0
+
+  if ! grep -qs 'disable_tools.*foundry' "$sysconf"; then
+    blib_say "mise: disabling foundry (glibc-only) in $sysconf"
+    # shellcheck disable=SC2086  # $SU: single token or empty (root)
+    if ! { $SU mkdir -p "${sysconf%/*}" &&
+      printf '%s\n' \
+        '# Written by dotfiles-Alpine bootstrap.sh — foundry ships only a glibc prebuilt,' \
+        '# which cannot run on musl. System-level so the scheduled maint runner sees it too.' \
+        '[settings]' \
+        'disable_tools = ["foundry"]' | $SU tee "$sysconf" >/dev/null; }; then
+      blib_note_fail "mise foundry exclusion — could not write $sysconf; retry: printf '[settings]\\ndisable_tools = [\"foundry\"]\\n' | ${SU:+$SU }tee $sysconf"
+    fi
+  fi
+
+  # From $HOME, not the repo: mise walks up from the cwd for project configs.
+  missing="$(cd "$HOME" && "$mise_bin" ls --missing 2>/dev/null | awk '{print $1}' | paste -sd' ' -)" || true
+  [[ -n $missing ]] || return 0
+  if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]]; then
+    blib_say "mise runtimes: $missing (source builds on musl — this takes a while)"
+    (cd "$HOME" && "$mise_bin" install) ||
+      blib_note_fail "mise runtimes — some failed to install; retry: mise install"
+  else
+    blib_say "mise runtimes not installed: $missing — run \`mise install\`, or re-bootstrap with DOTFILES_MISE_INSTALL=1"
+  fi
+  return 0
+}
+
 # ── nvim-treesitter version floors (tree-sitter-cli AND neovim) ───────────────
 # nvim-treesitter (pinned to `main` in core/nvim) hard-requires tree-sitter-cli
 # >= 0.26.1. Alpine's `community` package IS the musl build, but it only CLEARS
@@ -449,6 +499,7 @@ bootstrap_provision() {
   # `command -v mise` fallback in _dotfiles_go_install below is still blind to it — the
   # whole point of the prelude, one install too late. Idempotent by construction.
   blib_user_bindirs_on_path
+  _alpine_mise_runtimes
   # yazi + tree-sitter-cli: apk installs the community musl build first (packages.txt);
   # this cargo build is the fallback if apk missed it. On musl it compiles against the
   # musl target (needs build-base, in packages.txt).
