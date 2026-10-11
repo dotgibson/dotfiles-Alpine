@@ -179,7 +179,11 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     # Unreliable: `go@latest` can resolve to mise's go *backend* (a module installer)
     # rather than a Go runtime, in which case nothing is installed and the exec fails.
     # `go` is in Alpine community and is listed in packages.txt — prefer that.
-    GOBIN="$gobin" mise exec go@latest -- go install "$1" >/dev/null 2>&1 ||
+    # `mise install go@latest` FIRST: Core's mise/config.toml sets auto_install = false,
+    # and mise (verified 2026.10.7) carries that into exec_auto_install, so a bare
+    # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
+    # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
+    { mise install go@latest && GOBIN="$gobin" mise exec go@latest -- go install "$1"; } >/dev/null 2>&1 ||
       blib_note_fail "$2 — no Go runtime (mise fallback failed); install it: ${SU:+$SU }apk add go"
   else
     blib_note_fail "$2 — needs Go; install later with: GOBIN=$gobin go install $1"
