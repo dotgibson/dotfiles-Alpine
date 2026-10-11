@@ -303,6 +303,12 @@ _fetch_verified() { # <url> <sha256> <dest>
   rm -f "$tmp"
 }
 
+# Script scope, so cleanup only ever consumes a dir THIS invocation's mktemp made: a
+# --links-only or --dry-run run never calls _boot_tmp_setup but still reaches
+# bootstrap_closing, and must not act on a _BOOT_TMP inherited from the environment.
+_BOOT_TMP=""
+export -n _BOOT_TMP 2>/dev/null || true
+
 # ── cargo builds go to DISK, not /tmp (dotfiles-Fedora#208) ────────────────────
 # `cargo install` builds in $TMPDIR (default /tmp), and yazi-build nests a second build
 # there too. Where /tmp is a tmpfs (systemd's default, often with a per-user quota) a few
