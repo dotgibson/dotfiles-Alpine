@@ -184,7 +184,7 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
     # `mise exec go@latest` on a box with no Go fails in ~2s instead of downloading it
     # (dotgibson/dotfiles-Fedora#209). It is a no-op once Go is present.
     { mise install go@latest && GOBIN="$gobin" mise exec go@latest -- go install "$1"; } >/dev/null 2>&1 ||
-      blib_note_fail "$2 — no Go runtime (mise fallback failed); install it: ${SU:+$SU }apk add go"
+      blib_note_fail "$2 — Go via mise failed (toolchain install or build); install Go with: ${SU:+$SU }apk add go, or retry: mise install go@latest && GOBIN=$gobin mise exec go@latest -- go install $1"
   else
     blib_note_fail "$2 — needs Go; install later with: GOBIN=$gobin go install $1"
   fi
