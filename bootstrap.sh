@@ -303,11 +303,77 @@ _fetch_verified() { # <url> <sha256> <dest>
   rm -f "$tmp"
 }
 
+# Script scope, so cleanup only ever consumes a dir THIS invocation's mktemp made: a
+# --links-only or --dry-run run never calls _boot_tmp_setup but still reaches
+# bootstrap_closing, and must not act on a _BOOT_TMP inherited from the environment.
+_BOOT_TMP=""
+export -n _BOOT_TMP 2>/dev/null || true
+
+# ── cargo builds go to DISK, not /tmp (dotfiles-Fedora#208) ────────────────────
+# `cargo install` builds in $TMPDIR (default /tmp), and yazi-build nests a second build
+# there too. Where /tmp is a tmpfs (systemd's default, often with a per-user quota) a few
+# crates fill it on a small box, and every later build and download fails with EDQUOT /
+# ENOSPC. _boot_tmp_setup points TMPDIR at a per-run dir on disk for the rest of
+# provisioning — unique per run (mktemp -d), so the sweeps below never reach into a
+# second bootstrap running at the same time. Ported from dotfiles-Fedora.
+_boot_tmp_setup() {
+  _BOOT_TMPDIR_ORIG="${TMPDIR-}"
+  _BOOT_TMPDIR_WAS_SET="${TMPDIR+1}"
+  _BOOT_TMP=""
+  local base="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles-bootstrap"
+  if mkdir -p "$base" 2>/dev/null &&
+    _BOOT_TMP="$(mktemp -d "$base/run.XXXXXX" 2>/dev/null)"; then
+    export TMPDIR="$_BOOT_TMP"
+  else
+    _BOOT_TMP=""
+    return 0
+  fi
+  # Clean up on an ABORT too (a hard exit, or set -e), not only via bootstrap_closing —
+  # else every interrupted run strands a multi-GB run dir that no later run removes.
+  # Chain onto the EXIT trap already set (Core's sudo-keepalive stop); never replace it.
+  # `trap -p` prints `trap -- '<cmd>' EXIT`, shell-quoted; eval re-splits it safely.
+  local prev
+  local -a parts=()
+  prev="$(trap -p EXIT)"
+  eval "parts=(${prev:-})"
+  # shellcheck disable=SC2064  # expand NOW, on purpose: it embeds the existing command
+  trap "${parts[2]:+${parts[2]}; }_boot_tmp_cleanup" EXIT
+  return 0
+}
+
+# cargo_install <args…> — `cargo install`, then sweep its build dirs even on FAILURE:
+# cargo keeps cargo-install* when a build dies, and yazi-build keeps its nested
+# yazi-build-*, so one failed crate would strand GBs for the rest of the run.
+cargo_install() {
+  local rc=0
+  cargo install "$@" || rc=$?
+  if [[ -n "${_BOOT_TMP:-}" ]]; then
+    rm -rf -- "$_BOOT_TMP"/cargo-install* "$_BOOT_TMP"/yazi-build-*
+  fi
+  return "$rc"
+}
+
+# _boot_tmp_cleanup — called from bootstrap_closing and the EXIT trap: drop the per-run dir and hand the
+# caller's TMPDIR back. The path guard keeps this rm from ever aiming at anything else.
+_boot_tmp_cleanup() {
+  if [[ "${_BOOT_TMP:-}" == */dotfiles-bootstrap/run.* ]]; then
+    rm -rf -- "$_BOOT_TMP"
+    if [[ -n "${_BOOT_TMPDIR_WAS_SET:-}" ]]; then
+      export TMPDIR="$_BOOT_TMPDIR_ORIG"
+    else
+      unset TMPDIR
+    fi
+    _BOOT_TMP="" # once only: the EXIT trap calls this again after bootstrap_closing
+  fi
+  return 0
+}
+
 # ── the apk phase (full runs only; the driver runs it under the sudo keepalive) ─
 # The keepalive is a no-op for doas (no refreshable timestamp) and for root — this
 # box's normal case.
 # shellcheck disable=SC2329
 bootstrap_provision() {
+  _boot_tmp_setup
   # $SU is what every privileged line below invokes: a single token (an absolute path to
   # doas or sudo) or empty when root — the value the driver resolved and escalates with.
   SU="$BLIB_SU"
@@ -404,7 +470,7 @@ bootstrap_provision() {
   # Same two-part guard dotfiles-Offense already uses.
   if ! command -v yazi >/dev/null && [[ ! -x "$HOME/.cargo/bin/yazi" ]] && command -v cargo >/dev/null; then
     blib_say "yazi (cargo build from source — slow on musl, output below)"
-    cargo install --force --locked yazi-build ||
+    cargo_install --force --locked yazi-build ||
       blib_note_fail "yazi — cargo build failed; retry: cargo install --force --locked yazi-build"
   fi
   # tree-sitter is VERSION-guarded, not presence-guarded — see the floor helpers
@@ -414,7 +480,7 @@ bootstrap_provision() {
   if ! _dotfiles_ts_meets_floor "$TREESITTER_FLOOR"; then
     if command -v cargo >/dev/null; then
       blib_say "tree-sitter-cli (cargo build — apk's build is below the >=$TREESITTER_FLOOR floor, or absent)"
-      cargo install --locked tree-sitter-cli >/dev/null 2>&1 ||
+      cargo_install --locked tree-sitter-cli >/dev/null 2>&1 ||
         blib_note_fail "tree-sitter-cli — cargo build failed; retry later: cargo install --locked tree-sitter-cli"
     else
       # Do NOT let this one go quiet. The whole bug this guard fixes was a box
@@ -442,7 +508,7 @@ bootstrap_provision() {
   # binary; best-effort so a build hiccup never aborts bootstrap.
   if ! command -v tldr >/dev/null && [[ ! -x "$HOME/.cargo/bin/tldr" ]] && command -v cargo >/dev/null; then
     blib_say "tealdeer (cargo build — tldr client; testing-only on Alpine)"
-    cargo install --locked tealdeer >/dev/null 2>&1 ||
+    cargo_install --locked tealdeer >/dev/null 2>&1 ||
       blib_note_fail "tealdeer — cargo build failed; retry later: cargo install --locked tealdeer"
   fi
   # viddy (watch replacement; Core aliases watch->viddy, HAVE_VIDDY-guarded) now ships
@@ -453,14 +519,14 @@ bootstrap_provision() {
   # never runs once apk has installed it. Harmless: Core uses only `watch`->`viddy`.
   if ! command -v viddy >/dev/null && [[ ! -x "$HOME/.cargo/bin/viddy" ]] && command -v cargo >/dev/null; then
     blib_say "viddy (cargo build — watch replacement; Rust)"
-    cargo install --locked viddy >/dev/null 2>&1 ||
+    cargo_install --locked viddy >/dev/null 2>&1 ||
       blib_note_fail "viddy — cargo build failed; retry later: cargo install --locked viddy"
   fi
   # jnv (interactive jq filter): not packaged by Alpine in main, community OR edge, so
   # cargo is its only source here. Plain build — no special flags needed.
   if ! command -v jnv >/dev/null && [[ ! -x "$HOME/.cargo/bin/jnv" ]] && command -v cargo >/dev/null; then
     blib_say "jnv (cargo build — interactive jq filter; unpackaged on Alpine)"
-    cargo install --locked jnv >/dev/null 2>&1 ||
+    cargo_install --locked jnv >/dev/null 2>&1 ||
       blib_note_fail "jnv — cargo build failed; retry later: cargo install --locked jnv"
   fi
   # ouch (archive (de)compressor): `testing`-only on Alpine (edge/testing 0.6.1-r0,
@@ -480,7 +546,7 @@ bootstrap_provision() {
   # archives. tar/zip/gz/xz/zstd/bz2/7z all still work.
   if ! command -v ouch >/dev/null && [[ ! -x "$HOME/.cargo/bin/ouch" ]] && command -v cargo >/dev/null; then
     blib_say "ouch (cargo build — archive tool; bzip3 dropped, see comment)"
-    cargo install --locked ouch --no-default-features \
+    cargo_install --locked ouch --no-default-features \
       --features unrar,use_zlib,use_zstd_thin >/dev/null 2>&1 ||
       blib_note_fail "ouch — cargo build failed; retry later: cargo install --locked ouch --no-default-features --features unrar,use_zlib,use_zstd_thin"
   fi
@@ -602,6 +668,14 @@ bootstrap_wire_post_loader() {
   # then points at.
   blib_say "symlinking zsh/zshenv.zsh (Alpine ZDOTDIR shim)"
   blib_link "$DOTFILES/zsh/zshenv.zsh" "$HOME/.zshenv"
+}
+
+# Runs after the wire phase. The per-run build dir (see "cargo builds go to DISK") goes
+# away here, and TMPDIR is restored.
+# shellcheck disable=SC2329
+bootstrap_closing() {
+  _boot_tmp_cleanup
+  return 0
 }
 
 blib_main "$@"
