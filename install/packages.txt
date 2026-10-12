@@ -137,6 +137,8 @@ xclip          # X11 fallback
 # ── build toolchain (needed to compile yazi + tree-sitter-cli on musl) ────────
 build-base     # Alpine's gcc/g++/make/musl-dev meta (replaces Fedora's gcc/gcc-c++/make)
 cargo          # rust toolchain (pulls rust)
+rustup         # rustup-init only — bootstrap pre-installs rustup on the MINIMAL profile so
+               # mise's rust skips clippy/rust-docs (1.5 GiB → ~780 MiB); see bootstrap.sh
 go             # go toolchain — REQUIRED for the duf/glow/sesh `go install` fallbacks in
                # bootstrap.sh. Without it those fail every run (with a one-line hint each):
                # the mise fallback resolves `go@latest` to mise's go *backend* (a module

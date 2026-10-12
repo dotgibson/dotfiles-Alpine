@@ -265,16 +265,44 @@ _alpine_mise_runtimes() {
   # what hangs the box, so refuse rather than brick it; swap is enough to get past it.
   local mem_kib
   mem_kib="$(awk '/^(MemTotal|SwapTotal):/ {t += $2} END {print t + 0}' /proc/meminfo 2>/dev/null)" || mem_kib=0
+  # Disk: the full set lands at ~2.3 GiB under $HOME (zig/java/go/node are 200-370 MiB
+  # each, rust ~780 MiB on the minimal profile below) plus downloads and ruby's build tree
+  # in flight. An 8 GiB VM with swap ran out mid-install, and rustup reports that only as
+  # "failed to extract package: IO receiver … disconnected" — so check up front.
+  local disk_kib
+  disk_kib="$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 {print $4 + 0}')" || disk_kib=0
   # Without those settings the install is the 8-way parallel source build that hangs the
   # box — the exact thing this function exists to prevent — so don't run it.
   if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((settings_ok == 0)); then
     blib_note_fail "mise runtimes — skipped: $sysconf is not in place (see above), and without it mise builds in parallel; fix that, then re-run with DOTFILES_MISE_INSTALL=1"
   elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((mem_kib < 2 * 1024 * 1024)); then
     blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=1"
+  elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((disk_kib < 4 * 1024 * 1024)); then
+    blib_note_fail "mise runtimes — skipped: $((disk_kib / 1024)) MiB free under $HOME; the runtimes need ~4 GiB while installing. Grow the disk (or free space), then re-run with DOTFILES_MISE_INSTALL=1"
   elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]]; then
+    # rust: mise installs rustup only when it is absent, then reads `rustup show profile`
+    # and, on `default`, adds clippy + rust-docs + rustfmt — 1.5 GiB. Pre-installing rustup
+    # on the minimal profile makes mise skip its own rustup-init and install a bare
+    # toolchain (~780 MiB); rustfmt is added back after, since conform's rustfmt needs it.
+    # Only when rust is about to be installed, so an existing box's profile is left alone.
+    local rust_new=0 rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin/rustup"
+    if [[ " $missing " == *" rust "* ]]; then
+      rust_new=1
+      if [[ -x $rustup_bin ]]; then
+        "$rustup_bin" set profile minimal >/dev/null 2>&1 || true
+      elif command -v rustup-init >/dev/null 2>&1; then
+        rustup-init -y --no-modify-path --default-toolchain none --profile minimal >/dev/null 2>&1 ||
+          blib_warn "rustup-init failed — mise will install rustup itself, on the larger default profile"
+      fi
+    fi
     blib_say "mise runtimes: $missing (ruby builds from source on musl — this takes a while)"
     (cd "$HOME" && "$mise_bin" install) ||
       blib_note_fail "mise runtimes — some failed to install; retry: mise install"
+    if ((rust_new)) && [[ -x $rustup_bin ]]; then
+      # `mise exec` pins RUSTUP_TOOLCHAIN to whatever version the config resolved to.
+      (cd "$HOME" && "$mise_bin" exec rust -- rustup component add rustfmt >/dev/null 2>&1) ||
+        blib_note_fail "rustfmt — could not add it to mise's rust; retry: mise exec rust -- rustup component add rustfmt"
+    fi
   else
     blib_say "mise runtimes not installed: $missing — run \`mise install\`, or re-bootstrap with DOTFILES_MISE_INSTALL=1"
   fi
