@@ -297,7 +297,7 @@ _alpine_mise_runtimes() {
       # disk-exhaustion this exists to prevent. Install everything else; leave rust out.
       if [[ "$("$rustup_bin" show profile 2>/dev/null)" != minimal ]]; then
         rust_new=0
-        tools="$(printf '%s\n' $missing | grep -vx rust | paste -sd' ' -)"
+        tools="$(tr ' ' '\n' <<<"$missing" | grep -vx rust | paste -sd' ' -)"
         blib_note_fail "rust — skipped: could not put rustup on the minimal profile (apk rustup missing, or rustup-init / rustup set profile failed); retry: ${SU:+$SU }apk add rustup && rustup-init -y --no-modify-path --default-toolchain none --profile minimal && mise install rust"
       fi
     fi
