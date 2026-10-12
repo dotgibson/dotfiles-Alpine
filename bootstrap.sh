@@ -231,8 +231,11 @@ _alpine_mise_runtimes() {
     'node.mirror_url = "https://unofficial-builds.nodejs.org/download/release/"' \
     'node.compile = false' \
     '# python: python-build-standalone ships musl prebuilts (dynamic — musllinux wheels load).' \
-    '# Explicit, because mise only defaults all_compile=true on Alpine until 2027.8.0.' \
-    'python.compile = false')"
+    '# Explicit, because mise only implies all_compile=true on Alpine until 2027.8.0.' \
+    'python.compile = false' \
+    '# ruby: no musl prebuilt exists (jdx/ruby ships glibc + macOS only), so compile. Explicit' \
+    '# for the same reason — without it, ruby errors out once that implicit default goes away.' \
+    'ruby.compile = true')"
   if [[ "$(cat "$sysconf" 2>/dev/null)" != "$want" ]]; then
     blib_say "mise: writing musl settings (no foundry, jobs=1, prebuilt node/python) to $sysconf"
     # shellcheck disable=SC2086  # $SU: single token or empty (root)
