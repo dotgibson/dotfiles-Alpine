@@ -34,5 +34,7 @@ What belongs **here** is only the OS-native layer: the `apk` package list, clipb
 - `install/packages.txt` — Alpine package names
 - `zsh/zshenv.zsh` — `~/.zshenv` shim exporting `ZDOTDIR`; silences Alpine's
   `/etc/zsh/zshrc` XDG warning. Alpine-only — don't port it blindly
-- `bootstrap.sh` — symlinks Core + OS files into place
+- `bootstrap.sh` — symlinks Core + OS files into place; writes `/etc/mise/config.toml`
+  (`disable_tools = ["foundry"]`, glibc-only) and runs `mise install` only with
+  `DOTFILES_MISE_INSTALL=1` (musl source builds are slow)
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
