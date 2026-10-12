@@ -129,8 +129,8 @@ without touching `apk`), `--only` / `--skip` (limit to some Core module groups),
 `--strict` (exit 1 if any best-effort install did not complete — they are listed
 either way).
 `DOTFILES_MISE_INSTALL=1 ./bootstrap.sh` also installs the mise runtimes from
-Core's `mise/config.toml`. They are opt-in because on musl, python and ruby
-compile from source (node comes as a musl prebuilt). Installs run one at a time, and
+Core's `mise/config.toml`. They are opt-in because on musl, ruby compiles from
+source (node and python come as musl prebuilts). Installs run one at a time, and
 bootstrap skips them below ~2 GiB of RAM+swap — that compile OOM-hangs a 1 GB VM.
 Without the flag, bootstrap lists what is missing; run `mise install` whenever you're ready.
 Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
@@ -148,8 +148,8 @@ prompt — comes from vendored Core; this repo owns the Alpine specifics:
 - `install/packages.txt` — the `apk` package list (modern CLI stack)
 - `os/alpine.zsh` — clipboard + package-manager aliases → `~/.config/zsh/80-os.zsh`
 - `/etc/mise/config.toml` — written by bootstrap: disables mise's `foundry`
-  (glibc-only prebuilt), sets `jobs = 1`, and pulls node as a musl prebuilt from
-  unofficial-builds.nodejs.org — system-wide, so the scheduled maint run gets it too
+  (glibc-only prebuilt), sets `jobs = 1`, and pulls node (unofficial-builds.nodejs.org)
+  and python (python-build-standalone) as musl prebuilts — system-wide, so the scheduled maint run gets it too
 - `wsl/wsl.conf` — installed to `/etc/wsl.conf` on WSL (no systemd — OpenRC)
 - `core/` — vendored from `dotfiles-core` (read-only here; edit upstream)
 

@@ -207,8 +207,8 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
 # The system config (/etc/mise/config.toml) has none of those problems: every mise process
 # reads it, it ranks below the user's global config, and `mise use -g` never writes it.
 #
-# Then the runtimes. On musl mise compiles python/ruby from source (all_compile — see the
-# headers block in install/packages.txt; node is pulled as a musl prebuilt instead), so a
+# Then the runtimes. On musl mise compiles ruby from source (all_compile — see the headers
+# block in install/packages.txt; node and python are pulled as musl prebuilts instead), so a
 # plain bootstrap only says what is missing. DOTFILES_MISE_INSTALL=1 runs the install.
 _alpine_mise_runtimes() {
   local mise_bin missing sysconf=/etc/mise/config.toml
@@ -229,9 +229,12 @@ _alpine_mise_runtimes() {
     '# node: unofficial-builds.nodejs.org ships musl prebuilts, so skip the 20+ min compile.' \
     'node.flavor = "musl"' \
     'node.mirror_url = "https://unofficial-builds.nodejs.org/download/release/"' \
-    'node.compile = false')"
+    'node.compile = false' \
+    '# python: python-build-standalone ships musl prebuilts (dynamic — musllinux wheels load).' \
+    '# Explicit, because mise only defaults all_compile=true on Alpine until 2027.8.0.' \
+    'python.compile = false')"
   if [[ "$(cat "$sysconf" 2>/dev/null)" != "$want" ]]; then
-    blib_say "mise: writing musl settings (no foundry, jobs=1, prebuilt node) to $sysconf"
+    blib_say "mise: writing musl settings (no foundry, jobs=1, prebuilt node/python) to $sysconf"
     # shellcheck disable=SC2086  # $SU: single token or empty (root)
     if ! { $SU mkdir -p "${sysconf%/*}" && printf '%s\n' "$want" | $SU tee "$sysconf" >/dev/null; }; then
       blib_note_fail "mise musl settings — could not write $sysconf; re-run bootstrap as a user with ${SU:-root} access"
@@ -241,14 +244,14 @@ _alpine_mise_runtimes() {
   # From $HOME, not the repo: mise walks up from the cwd for project configs.
   missing="$(cd "$HOME" && "$mise_bin" ls --missing 2>/dev/null | awk '{print $1}' | paste -sd' ' -)" || true
   [[ -n $missing ]] || return 0
-  # python and ruby still compile from source. Below ~2 GiB of RAM+swap that compile is
+  # ruby still compiles from source. Below ~2 GiB of RAM+swap that compile is
   # what hangs the box, so refuse rather than brick it; swap is enough to get past it.
   local mem_kib
   mem_kib="$(awk '/^(MemTotal|SwapTotal):/ {t += $2} END {print t + 0}' /proc/meminfo 2>/dev/null)" || mem_kib=0
   if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((mem_kib < 2 * 1024 * 1024)); then
-    blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile python/ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=1"
+    blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=1"
   elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]]; then
-    blib_say "mise runtimes: $missing (python/ruby build from source on musl — this takes a while)"
+    blib_say "mise runtimes: $missing (ruby builds from source on musl — this takes a while)"
     (cd "$HOME" && "$mise_bin" install) ||
       blib_note_fail "mise runtimes — some failed to install; retry: mise install"
   else
@@ -515,7 +518,6 @@ bootstrap_provision() {
   # `command -v mise` fallback in _dotfiles_go_install below is still blind to it — the
   # whole point of the prelude, one install too late. Idempotent by construction.
   blib_user_bindirs_on_path
-  _alpine_mise_runtimes
   # yazi + tree-sitter-cli: apk installs the community musl build first (packages.txt);
   # this cargo build is the fallback if apk missed it. On musl it compiles against the
   # musl target (needs build-base, in packages.txt).
@@ -735,6 +737,12 @@ bootstrap_wire_post_loader() {
   # then points at.
   blib_say "symlinking zsh/zshenv.zsh (Alpine ZDOTDIR shim)"
   blib_link "$DOTFILES/zsh/zshenv.zsh" "$HOME/.zshenv"
+
+  # mise runtimes run HERE, not in bootstrap_provision: `mise ls --missing` reads
+  # ~/.config/mise/config.toml, which blib_link_core only seeds in the wire phase. Called
+  # from provision, a fresh box had no config yet, saw nothing missing, and silently
+  # installed nothing. Provisioning, so skipped on --links-only and --dry-run like it.
+  if [[ ${BLIB_LINKS_ONLY:-0} == 0 ]] && ! _blib_dry; then _alpine_mise_runtimes; fi
 }
 
 # Runs after the wire phase. The per-run build dir (see "cargo builds go to DISK") goes
