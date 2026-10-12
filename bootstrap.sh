@@ -216,9 +216,12 @@ _alpine_mise_runtimes() {
   [[ -x $mise_bin ]] || return 0
 
   # Rewritten whenever it differs, so a box bootstrapped before a setting landed picks it up.
+  # A file WITHOUT this script's marker line is an admin's, not ours: back it up first,
+  # same .pre-dotfiles.<epoch> convention as /etc/wsl.conf below.
+  local marker='# Written by dotfiles-Alpine bootstrap.sh' settings_ok=1 backup
   local want
   want="$(printf '%s\n' \
-    '# Written by dotfiles-Alpine bootstrap.sh — re-run bootstrap to update; do not edit.' \
+    "$marker — re-run bootstrap to update; do not edit." \
     '# System-level so the scheduled maint runner (bash, not zsh) sees it too.' \
     '[settings]' \
     '# foundry ships only a glibc prebuilt, which cannot run on musl.' \
@@ -238,10 +241,21 @@ _alpine_mise_runtimes() {
     'ruby.compile = true')"
   if [[ "$(cat "$sysconf" 2>/dev/null)" != "$want" ]]; then
     blib_say "mise: writing musl settings (no foundry, jobs=1, prebuilt node/python) to $sysconf"
-    # shellcheck disable=SC2086  # $SU: single token or empty (root)
-    if ! { $SU mkdir -p "${sysconf%/*}" && printf '%s\n' "$want" | $SU tee "$sysconf" >/dev/null; }; then
-      blib_note_fail "mise musl settings — could not write $sysconf; re-run bootstrap as a user with ${SU:-root} access"
+    if [[ -e $sysconf ]] && ! grep -qsF "$marker" "$sysconf"; then
+      backup="$sysconf.pre-dotfiles.$(date +%s)"
+      # shellcheck disable=SC2086  # $SU: single token or empty (root)
+      if $SU cp -p "$sysconf" "$backup"; then
+        blib_warn "existing $sysconf was not bootstrap's — backed up -> $backup (merge any settings you need back in)"
+      else
+        settings_ok=0
+      fi
     fi
+    # shellcheck disable=SC2086
+    if ((settings_ok)) && ! { $SU mkdir -p "${sysconf%/*}" && printf '%s\n' "$want" | $SU tee "$sysconf" >/dev/null; }; then
+      settings_ok=0
+    fi
+    ((settings_ok)) ||
+      blib_note_fail "mise musl settings — could not back up or write $sysconf; re-run bootstrap as a user with ${SU:-root} access"
   fi
 
   # From $HOME, not the repo: mise walks up from the cwd for project configs.
@@ -251,7 +265,11 @@ _alpine_mise_runtimes() {
   # what hangs the box, so refuse rather than brick it; swap is enough to get past it.
   local mem_kib
   mem_kib="$(awk '/^(MemTotal|SwapTotal):/ {t += $2} END {print t + 0}' /proc/meminfo 2>/dev/null)" || mem_kib=0
-  if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((mem_kib < 2 * 1024 * 1024)); then
+  # Without those settings the install is the 8-way parallel source build that hangs the
+  # box — the exact thing this function exists to prevent — so don't run it.
+  if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((settings_ok == 0)); then
+    blib_note_fail "mise runtimes — skipped: $sysconf is not in place (see above), and without it mise builds in parallel; fix that, then re-run with DOTFILES_MISE_INSTALL=1"
+  elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((mem_kib < 2 * 1024 * 1024)); then
     blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=1"
   elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]]; then
     blib_say "mise runtimes: $missing (ruby builds from source on musl — this takes a while)"
