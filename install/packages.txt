@@ -147,12 +147,15 @@ openssl-dev    # ditto — common cargo build dependency
 
 # ── headers for mise's source builds of node/python/ruby (musl) ──────────────
 # On musl, mise flips `all_compile` to true by DEFAULT (a mise-side default, not a
-# setting in core/mise/config.toml): every precompiled runtime it would otherwise
-# fetch — nodejs.org's tarballs, python-build-standalone, the jdx/ruby prebuilts —
-# is glibc-linked and cannot run here. So node/python/ruby are always COMPILED on
-# Alpine, and each compile needs the -dev headers below. Without them `mise install`
-# (and the daily `mise upgrade` in core/maint/dotfiles-maint.sh) fails every run with
-# three source-build errors and the three runtimes stay `(missing)` in `mise ls`:
+# setting in core/mise/config.toml), which compiles node/python/ruby from source.
+# bootstrap.sh overrides that per runtime in /etc/mise/config.toml:
+#   node   → musl prebuilt (unofficial-builds.nodejs.org) — node.compile = false
+#   python → musl prebuilt (python-build-standalone)     — python.compile = false
+#   ruby   → STILL COMPILED: jdx/ruby ships no musl build — ruby.compile = true
+# So in the default path only ruby's headers (zlib-dev, libffi-dev, yaml-dev,
+# readline-dev) are exercised. The node/python ones are kept as the fallback for when
+# a prebuilt is missing (a new python before python-build-standalone cuts it, or someone
+# sets <tool>.compile = true): without them that compile fails with —
 #   node   → deps/uv/src/unix/udp.c: fatal error: linux/errqueue.h  (linux-headers)
 #   python → zipimport.ZipImportError: can't decompress data; zlib not available,
 #            plus _ctypes/_curses/readline/_bz2/_lzma/_zstd/_uuid "missing"
