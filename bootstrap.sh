@@ -285,19 +285,28 @@ _alpine_mise_runtimes() {
     # on the minimal profile makes mise skip its own rustup-init and install a bare
     # toolchain (~780 MiB); rustfmt is added back after, since conform's rustfmt needs it.
     # Only when rust is about to be installed, so an existing box's profile is left alone.
-    local rust_new=0 rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin/rustup"
+    local rust_new=0 rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin/rustup" tools=$missing
     if [[ " $missing " == *" rust "* ]]; then
       rust_new=1
       if [[ -x $rustup_bin ]]; then
-        "$rustup_bin" set profile minimal >/dev/null 2>&1 || true
+        "$rustup_bin" set profile minimal >/dev/null 2>&1
       elif command -v rustup-init >/dev/null 2>&1; then
-        rustup-init -y --no-modify-path --default-toolchain none --profile minimal >/dev/null 2>&1 ||
-          blib_warn "rustup-init failed — mise will install rustup itself, on the larger default profile"
+        rustup-init -y --no-modify-path --default-toolchain none --profile minimal >/dev/null 2>&1
+      fi
+      # Fail closed: on any other profile mise pulls the 1.5 GiB default set, which is the
+      # disk-exhaustion this exists to prevent. Install everything else; leave rust out.
+      if [[ "$("$rustup_bin" show profile 2>/dev/null)" != minimal ]]; then
+        rust_new=0
+        tools="$(printf '%s\n' $missing | grep -vx rust | paste -sd' ' -)"
+        blib_note_fail "rust — skipped: could not put rustup on the minimal profile (apk rustup missing, or rustup-init / rustup set profile failed); retry: ${SU:+$SU }apk add rustup && rustup-init -y --no-modify-path --default-toolchain none --profile minimal && mise install rust"
       fi
     fi
-    blib_say "mise runtimes: $missing (ruby builds from source on musl — this takes a while)"
-    (cd "$HOME" && "$mise_bin" install) ||
-      blib_note_fail "mise runtimes — some failed to install; retry: mise install"
+    if [[ -n $tools ]]; then
+      blib_say "mise runtimes: $tools (ruby builds from source on musl — this takes a while)"
+      # shellcheck disable=SC2086  # $tools: space-separated tool names, word-split on purpose
+      (cd "$HOME" && "$mise_bin" install $tools) ||
+        blib_note_fail "mise runtimes — some failed to install; retry: mise install"
+    fi
     if ((rust_new)) && [[ -x $rustup_bin ]]; then
       # `mise exec` pins RUSTUP_TOOLCHAIN to whatever version the config resolved to.
       (cd "$HOME" && "$mise_bin" exec rust -- rustup component add rustfmt >/dev/null 2>&1) ||
