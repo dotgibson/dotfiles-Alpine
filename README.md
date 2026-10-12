@@ -130,8 +130,9 @@ without touching `apk`), `--only` / `--skip` (limit to some Core module groups),
 either way).
 `DOTFILES_MISE_INSTALL=1 ./bootstrap.sh` also installs the mise runtimes from
 Core's `mise/config.toml`. They are opt-in because on musl, ruby compiles from
-source (node and python come as musl prebuilts). Installs run one at a time, and
-bootstrap skips them below ~2 GiB of RAM+swap — that compile OOM-hangs a 1 GB VM.
+source (node and python come as musl prebuilts). Installs run one at a time, rust
+uses rustup's minimal profile plus rustfmt (~780 MiB, not 1.5 GiB), and bootstrap skips
+the install below ~2 GiB of RAM+swap (that compile OOM-hangs a 1 GB VM) or ~4 GiB free disk.
 Without the flag, bootstrap lists what is missing; run `mise install` whenever you're ready.
 Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
 anything is linked over them — nothing is overwritten in place.
