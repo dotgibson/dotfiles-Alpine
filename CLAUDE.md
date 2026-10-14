@@ -40,5 +40,6 @@ What belongs **here** is only the OS-native layer: the `apk` package list, clipb
   deferred and listed — #221) or `=all` (everything, ~2.3 GiB; rust on rustup's minimal profile +
   rustfmt), and only with ≥2 GiB RAM+swap and ≥2 GiB (lean) / ≥4 GiB (all) free disk (parallel musl
   source builds OOM-hung a 1 GB VM); runs in the wire phase, after Core's mise config is seeded.
-  Stale `~/.cache/dotfiles-bootstrap/run.*` dirs (>1 day, from hard-killed runs) are swept first
+  Stranded `~/.cache/dotfiles-bootstrap/run.*` dirs (owner PID in `.pid` dead, or no `.pid` and
+  >1 day old — hard-killed runs) are swept first; a live owner's dir is never touched
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)

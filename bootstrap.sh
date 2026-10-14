@@ -505,14 +505,36 @@ _boot_tmp_setup() {
     _BOOT_TMP=""
     return 0
   fi
-  # Stale run dirs first. The EXIT trap below covers `set -e` and signals, but not SIGKILL,
-  # the OOM killer or a power-off — exactly the small-VM deaths #222 is about — and each of
-  # those strands a run dir holding mise's scratch and ruby's build tree (dotfiles-Alpine#221
-  # measured ~1.2 GB of it). Only dirs older than a day, so a concurrent run still compiling
-  # ruby is never touched; busybox find (-mtime +0 = more than 24 h).
-  /usr/bin/find "$base" -mindepth 1 -maxdepth 1 -type d -name 'run.*' -mtime +0 -exec rm -rf {} + 2>/dev/null || true
+  # Stranded run dirs first. The EXIT trap below covers `set -e` and signals, but not
+  # SIGKILL, the OOM killer or a power-off — exactly the small-VM deaths #222 is about — and
+  # each of those strands a run dir holding mise's scratch and ruby's build tree
+  # (dotfiles-Alpine#221 measured ~1.2 GB of it).
+  #
+  # OWNERSHIP, NOT AGE, decides. Each run writes its shell's PID to run.*/.pid (below). A dir
+  # whose owner is still alive is never touched, however old: a ruby compile on a small VM
+  # can outlast a day, and activity deep inside the tree does not refresh the dir's own
+  # mtime, so an age test alone would delete a live run's TMPDIR from under it. A dir whose
+  # owner is gone is swept at once — ENOSPC-then-re-run is exactly when the space is needed.
+  # Only a dir with NO .pid (an older bootstrap's, or an unreadable file) falls back to age:
+  # more than a day old, via busybox find (-mtime +0). /proc/<pid> rather than `kill -0`:
+  # the latter fails with EPERM on another user's live process, which would read as dead.
+  # A recycled PID keeps a dead run's dir alive until that process exits — the safe way to
+  # be wrong, and the next run after that reclaims it.
+  local d pid
+  for d in "$base"/run.*; do
+    [[ -d $d ]] || continue
+    pid="$(cat "$d/.pid" 2>/dev/null)" || pid=""
+    if [[ $pid =~ ^[0-9]+$ ]]; then
+      [[ -d "/proc/$pid" ]] && continue
+      rm -rf -- "$d"
+    elif [[ -n "$(/usr/bin/find "$d" -maxdepth 0 -mtime +0 2>/dev/null)" ]]; then
+      rm -rf -- "$d"
+    fi
+  done
   if _BOOT_TMP="$(mktemp -d "$base/run.XXXXXX" 2>/dev/null)"; then
     export TMPDIR="$_BOOT_TMP"
+    # $$ is the main shell, not a subshell's: it is the PID whose EXIT trap owns this dir.
+    printf '%s\n' "$$" >"$_BOOT_TMP/.pid" 2>/dev/null || true
   else
     _BOOT_TMP=""
     return 0
