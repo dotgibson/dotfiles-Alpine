@@ -71,6 +71,10 @@ Env overrides:
               root runs directly, else doas, else sudo. Set it empty or to `sudo`
               to override the probe.
   BLIB_DRY    set to 1 for the same effect as --dry-run
+  DOTFILES_MISE_INSTALL
+              1 installs the lean mise runtime set (node pnpm python ruby lua, ~435 MiB);
+              all installs every runtime in core/mise/config.toml (~2.3 GiB). Unset: list
+              what is missing and change nothing.
 EOF
 }
 
@@ -209,7 +213,38 @@ _dotfiles_go_install() { # <import-path@version> <binary-name>
 #
 # Then the runtimes. On musl mise compiles ruby from source (all_compile — see the headers
 # block in install/packages.txt; node and python are pulled as musl prebuilts instead), so a
-# plain bootstrap only says what is missing. DOTFILES_MISE_INSTALL=1 runs the install.
+# plain bootstrap only says what is missing. DOTFILES_MISE_INSTALL=1 installs the LEAN set
+# below; DOTFILES_MISE_INSTALL=all installs every runtime Core declares.
+#
+# LEAN BY DEFAULT (dotfiles-Alpine#221). The full [tools] set lands at ~2.3 GiB under $HOME on
+# this layer — zig 369 MiB, java 344 MiB, go 243 MiB, terraform 115 MiB, rust ~780 MiB even on
+# rustup's minimal profile — and it filled an 8 GiB VM. Two of those are second toolchains
+# here: install/packages.txt already provides `go` and `cargo` via apk. So bootstrap installs
+# only the interpreters this layer leans on (~435 MiB) and DEFERS the rest. Nothing is removed
+# from Core's config and nothing is hidden with disable_tools: the deferred tools stay
+# declared, `mise ls --missing` keeps naming them, and `mise install java` (or =all) brings
+# them in later. The deferred set is "everything not lean" rather than a second hard-coded
+# list, so a tool Core adds later is deferred by default, not installed.
+ALPINE_MISE_LEAN="node pnpm python ruby lua"
+
+# _alpine_mise_select <mode> <missing…> — print the tools bootstrap will install, in the
+# order given: mode `1` keeps those in ALPINE_MISE_LEAN, `all` keeps every tool, anything
+# else keeps none. Pure (no mise, no filesystem), so test/check-mise-select.sh can evaluate
+# it directly rather than stub mise.
+_alpine_mise_select() { # <mode> <missing…>
+  local mode="$1" t
+  shift
+  local -a keep=()
+  for t in "$@"; do
+    case "$mode" in
+      all) keep+=("$t") ;;
+      1) [[ " $ALPINE_MISE_LEAN " == *" $t "* ]] && keep+=("$t") ;;
+    esac
+  done
+  ((${#keep[@]})) && printf '%s\n' "${keep[*]}"
+  return 0
+}
+
 _alpine_mise_runtimes() {
   local mise_bin missing sysconf=/etc/mise/config.toml
   mise_bin="$(command -v mise 2>/dev/null)" || mise_bin="$HOME/.local/bin/mise"
@@ -261,32 +296,48 @@ _alpine_mise_runtimes() {
   # From $HOME, not the repo: mise walks up from the cwd for project configs.
   missing="$(cd "$HOME" && "$mise_bin" ls --missing 2>/dev/null | awk '{print $1}' | paste -sd' ' -)" || true
   [[ -n $missing ]] || return 0
+  local mode="${DOTFILES_MISE_INSTALL:-0}" tools deferred="" t
+  if [[ $mode != 1 && $mode != all ]]; then
+    blib_say "mise runtimes not installed: $missing — run \`mise install\`, or re-bootstrap with DOTFILES_MISE_INSTALL=1 (lean: $ALPINE_MISE_LEAN) or DOTFILES_MISE_INSTALL=all"
+    return 0
+  fi
+  # shellcheck disable=SC2086  # $missing: space-separated tool names, word-split on purpose
+  tools="$(_alpine_mise_select "$mode" $missing)"
+  for t in $missing; do
+    [[ " $tools " == *" $t "* ]] || deferred+="${deferred:+ }$t"
+  done
   # ruby still compiles from source. Below ~2 GiB of RAM+swap that compile is
   # what hangs the box, so refuse rather than brick it; swap is enough to get past it.
   local mem_kib
   mem_kib="$(awk '/^(MemTotal|SwapTotal):/ {t += $2} END {print t + 0}' /proc/meminfo 2>/dev/null)" || mem_kib=0
   # Disk: the full set lands at ~2.3 GiB under $HOME (zig/java/go/node are 200-370 MiB
   # each, rust ~780 MiB on the minimal profile below) plus downloads and ruby's build tree
-  # in flight. An 8 GiB VM with swap ran out mid-install, and rustup reports that only as
-  # "failed to extract package: IO receiver … disconnected" — so check up front.
-  local disk_kib
+  # in flight — so ~4 GiB free for `all`. The lean set is ~435 MiB installed; ~2 GiB free
+  # covers it with the same in-flight margin. An 8 GiB VM with swap ran out mid-install,
+  # and rustup reports that only as "failed to extract package: IO receiver … disconnected"
+  # — so check up front.
+  local disk_kib need_gib=2
+  [[ $mode == all ]] && need_gib=4
   disk_kib="$(df -Pk "$HOME" 2>/dev/null | awk 'NR == 2 {print $4 + 0}')" || disk_kib=0
   # Without those settings the install is the 8-way parallel source build that hangs the
   # box — the exact thing this function exists to prevent — so don't run it.
-  if [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((settings_ok == 0)); then
-    blib_note_fail "mise runtimes — skipped: $sysconf is not in place (see above), and without it mise builds in parallel; fix that, then re-run with DOTFILES_MISE_INSTALL=1"
-  elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((mem_kib < 2 * 1024 * 1024)); then
-    blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=1"
-  elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]] && ((disk_kib < 4 * 1024 * 1024)); then
-    blib_note_fail "mise runtimes — skipped: $((disk_kib / 1024)) MiB free under $HOME; the runtimes need ~4 GiB while installing. Grow the disk (or free space), then re-run with DOTFILES_MISE_INSTALL=1"
-  elif [[ ${DOTFILES_MISE_INSTALL:-0} == 1 ]]; then
+  if [[ -z $tools ]]; then
+    : # nothing in this mode's set is missing; the deferred line below covers the rest
+  elif ((settings_ok == 0)); then
+    blib_note_fail "mise runtimes — skipped: $sysconf is not in place (see above), and without it mise builds in parallel; fix that, then re-run with DOTFILES_MISE_INSTALL=$mode"
+  elif ((mem_kib < 2 * 1024 * 1024)); then
+    blib_note_fail "mise runtimes — skipped: $((mem_kib / 1024)) MiB RAM+swap is too little to compile ruby (needs ~2 GiB). Add swap (${SU:+$SU }fallocate -l 2G /swapfile && ${SU:+$SU }chmod 600 /swapfile && ${SU:+$SU }mkswap /swapfile && ${SU:+$SU }swapon /swapfile), then re-run with DOTFILES_MISE_INSTALL=$mode"
+  elif ((disk_kib < need_gib * 1024 * 1024)); then
+    blib_note_fail "mise runtimes — skipped: $((disk_kib / 1024)) MiB free under $HOME; the $([[ $mode == all ]] && echo full || echo lean) set needs ~$need_gib GiB while installing. Grow the disk (or free space), then re-run with DOTFILES_MISE_INSTALL=$mode"
+  else
     # rust: mise installs rustup only when it is absent, then reads `rustup show profile`
     # and, on `default`, adds clippy + rust-docs + rustfmt — 1.5 GiB. Pre-installing rustup
     # on the minimal profile makes mise skip its own rustup-init and install a bare
     # toolchain (~780 MiB); rustfmt is added back after, since conform's rustfmt needs it.
-    # Only when rust is about to be installed, so an existing box's profile is left alone.
-    local rust_new=0 rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin/rustup" tools=$missing
-    if [[ " $missing " == *" rust "* ]]; then
+    # Only when rust is about to be installed (it is not in the lean set, so only under
+    # =all today), so an existing box's profile is left alone.
+    local rust_new=0 rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin/rustup"
+    if [[ " $tools " == *" rust "* ]]; then
       rust_new=1
       if [[ -x $rustup_bin ]]; then
         "$rustup_bin" set profile minimal >/dev/null 2>&1
@@ -297,23 +348,25 @@ _alpine_mise_runtimes() {
       # disk-exhaustion this exists to prevent. Install everything else; leave rust out.
       if [[ "$("$rustup_bin" show profile 2>/dev/null)" != minimal ]]; then
         rust_new=0
-        tools="$(tr ' ' '\n' <<<"$missing" | grep -vx rust | paste -sd' ' -)"
+        tools="$(tr ' ' '\n' <<<"$tools" | grep -vx rust | paste -sd' ' -)"
         blib_note_fail "rust — skipped: could not put rustup on the minimal profile (apk rustup missing, or rustup-init / rustup set profile failed); retry: ${SU:+$SU }apk add rustup && rustup-init -y --no-modify-path --default-toolchain none --profile minimal && mise install rust"
       fi
     fi
     if [[ -n $tools ]]; then
-      blib_say "mise runtimes: $tools (ruby builds from source on musl — this takes a while)"
+      blib_say "mise runtimes ($([[ $mode == all ]] && echo full || echo lean) set): $tools (ruby builds from source on musl — this takes a while)"
       # shellcheck disable=SC2086  # $tools: space-separated tool names, word-split on purpose
       (cd "$HOME" && "$mise_bin" install $tools) ||
-        blib_note_fail "mise runtimes — some failed to install; retry: mise install"
+        blib_note_fail "mise runtimes — some failed to install; retry: mise install $tools"
     fi
     if ((rust_new)) && [[ -x $rustup_bin ]]; then
       # `mise exec` pins RUSTUP_TOOLCHAIN to whatever version the config resolved to.
       (cd "$HOME" && "$mise_bin" exec rust -- rustup component add rustfmt >/dev/null 2>&1) ||
         blib_note_fail "rustfmt — could not add it to mise's rust; retry: mise exec rust -- rustup component add rustfmt"
     fi
-  else
-    blib_say "mise runtimes not installed: $missing — run \`mise install\`, or re-bootstrap with DOTFILES_MISE_INSTALL=1"
+  fi
+  # By design, so blib_say and not blib_note_fail: --strict must not turn a deferral into exit 1.
+  if [[ -n $deferred ]]; then
+    blib_say "mise runtimes deferred (not in the lean set): $deferred — install with DOTFILES_MISE_INSTALL=all, or later: mise install $deferred"
   fi
   return 0
 }
@@ -448,9 +501,40 @@ _boot_tmp_setup() {
   _BOOT_TMPDIR_WAS_SET="${TMPDIR+1}"
   _BOOT_TMP=""
   local base="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles-bootstrap"
-  if mkdir -p "$base" 2>/dev/null &&
-    _BOOT_TMP="$(mktemp -d "$base/run.XXXXXX" 2>/dev/null)"; then
+  if ! mkdir -p "$base" 2>/dev/null; then
+    _BOOT_TMP=""
+    return 0
+  fi
+  # Stranded run dirs first. The EXIT trap below covers `set -e` and signals, but not
+  # SIGKILL, the OOM killer or a power-off — exactly the small-VM deaths #222 is about — and
+  # each of those strands a run dir holding mise's scratch and ruby's build tree
+  # (dotfiles-Alpine#221 measured ~1.2 GB of it).
+  #
+  # OWNERSHIP, NOT AGE, decides. Each run writes its shell's PID to run.*/.pid (below). A dir
+  # whose owner is still alive is never touched, however old: a ruby compile on a small VM
+  # can outlast a day, and activity deep inside the tree does not refresh the dir's own
+  # mtime, so an age test alone would delete a live run's TMPDIR from under it. A dir whose
+  # owner is gone is swept at once — ENOSPC-then-re-run is exactly when the space is needed.
+  # Only a dir with NO .pid (an older bootstrap's, or an unreadable file) falls back to age:
+  # more than a day old, via busybox find (-mtime +0). /proc/<pid> rather than `kill -0`:
+  # the latter fails with EPERM on another user's live process, which would read as dead.
+  # A recycled PID keeps a dead run's dir alive until that process exits — the safe way to
+  # be wrong, and the next run after that reclaims it.
+  local d pid
+  for d in "$base"/run.*; do
+    [[ -d $d ]] || continue
+    pid="$(cat "$d/.pid" 2>/dev/null)" || pid=""
+    if [[ $pid =~ ^[0-9]+$ ]]; then
+      [[ -d "/proc/$pid" ]] && continue
+      rm -rf -- "$d"
+    elif [[ -n "$(/usr/bin/find "$d" -maxdepth 0 -mtime +0 2>/dev/null)" ]]; then
+      rm -rf -- "$d"
+    fi
+  done
+  if _BOOT_TMP="$(mktemp -d "$base/run.XXXXXX" 2>/dev/null)"; then
     export TMPDIR="$_BOOT_TMP"
+    # $$ is the main shell, not a subshell's: it is the PID whose EXIT trap owns this dir.
+    printf '%s\n' "$$" >"$_BOOT_TMP/.pid" 2>/dev/null || true
   else
     _BOOT_TMP=""
     return 0

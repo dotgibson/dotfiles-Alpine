@@ -36,7 +36,10 @@ What belongs **here** is only the OS-native layer: the `apk` package list, clipb
   `/etc/zsh/zshrc` XDG warning. Alpine-only — don't port it blindly
 - `bootstrap.sh` — symlinks Core + OS files into place; writes `/etc/mise/config.toml`
   (`disable_tools = ["foundry"]`, `jobs = 1`, musl-prebuilt node + python) and runs `mise install`
-  only with `DOTFILES_MISE_INSTALL=1`, ≥2 GiB RAM+swap and ≥4 GiB free disk (rust on rustup's
-  minimal profile + rustfmt) (parallel musl source builds
-  OOM-hung a 1 GB VM); runs in the wire phase, after Core's mise config is seeded
+  only with `DOTFILES_MISE_INSTALL=1` (lean set `node pnpm python ruby lua`, ~435 MiB; the rest is
+  deferred and listed — #221) or `=all` (everything, ~2.3 GiB; rust on rustup's minimal profile +
+  rustfmt), and only with ≥2 GiB RAM+swap and ≥2 GiB (lean) / ≥4 GiB (all) free disk (parallel musl
+  source builds OOM-hung a 1 GB VM); runs in the wire phase, after Core's mise config is seeded.
+  Stranded `~/.cache/dotfiles-bootstrap/run.*` dirs (owner PID in `.pid` dead, or no `.pid` and
+  >1 day old — hard-killed runs) are swept first; a live owner's dir is never touched
 - `core/` — vendored Core (read-only here; edit upstream in dotfiles-core)
