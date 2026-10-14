@@ -128,11 +128,17 @@ Flags: `--dry-run` (preview every link, change nothing), `--links-only` (re-link
 without touching `apk`), `--only` / `--skip` (limit to some Core module groups),
 `--strict` (exit 1 if any best-effort install did not complete — they are listed
 either way).
-`DOTFILES_MISE_INSTALL=1 ./bootstrap.sh` also installs the mise runtimes from
-Core's `mise/config.toml`. They are opt-in because on musl, ruby compiles from
-source (node and python come as musl prebuilts). Installs run one at a time, rust
+`DOTFILES_MISE_INSTALL=1 ./bootstrap.sh` also installs the **lean** mise runtime set
+from Core's `mise/config.toml` — `node pnpm python ruby lua`, ~435 MiB. The rest (`rust`,
+`go`, `java`, `zig`, `terraform`, ~1.8 GiB more) is deferred: it stays declared, is listed
+as missing, and installs with `DOTFILES_MISE_INSTALL=all` or a later `mise install java`.
+Lean by default because the full set filled an 8 GB VM (#221), and apk already ships
+`go` and `cargo` on this layer. Runtimes are opt-in at all because on musl, ruby compiles
+from source (node and python come as musl prebuilts). Installs run one at a time, rust
 uses rustup's minimal profile plus rustfmt (~780 MiB, not 1.5 GiB), and bootstrap skips
-the install below ~2 GiB of RAM+swap (that compile OOM-hangs a 1 GB VM) or ~4 GiB free disk.
+the install below ~2 GiB of RAM+swap (that compile OOM-hangs a 1 GB VM) or too little
+free disk: ~2 GiB for the lean set, ~4 GiB for `all`. Minimum disk, then: an 8 GB root
+disk fits the lean set; `all` wants ~4 GiB free after the apk packages are in.
 Without the flag, bootstrap lists what is missing; run `mise install` whenever you're ready.
 Existing real files are moved aside as `<name>.pre-dotfiles.<epoch>` before
 anything is linked over them — nothing is overwritten in place.
